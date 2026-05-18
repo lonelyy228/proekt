@@ -1,0 +1,14 @@
+node_modules
+.next
+out
+coverage
+.tmp
+test-results
+playwright-report
+.env
+.env.local
+.env.*.local
+*.log
+prisma/migrations
+tsconfig.tsbuildinfo
+tmp-debug-admin-products.ts
