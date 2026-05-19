@@ -163,6 +163,25 @@ jobs:
             const fs = require("fs");
             const report = JSON.parse(fs.readFileSync(process.env.REPORT_PATH, "utf8"));
             const marker = "<!-- rsh-preview-smoke-summary -->";
+            const orderedStepKeys = ["prepare_database", "db_preflight", "e2e_security", "e2e_smoke"];
+            const stepMeta = {
+              prepare_database: {
+                label: "Prepare database",
+                next: "Проверь DATABASE_URL/DIRECT_URL, доступность postgres-сервиса и prisma migrate logs."
+              },
+              db_preflight: {
+                label: "DB preflight",
+                next: "Запусти `npm run db:preflight` локально и исправь статус миграций/схемы."
+              },
+              e2e_security: {
+                label: "E2E security gate",
+                next: "Запусти `npm run test:e2e:security` локально и исправь security регрессию."
+              },
+              e2e_smoke: {
+                label: "E2E smoke",
+                next: "Запусти `npm run test:e2e:smoke` локально и проверь API/UI контуры."
+              }
+            };
 
             const toEmoji = (status) => {
               if (status === "success") return "[OK]";
@@ -171,22 +190,30 @@ jobs:
               return "[SKIP]";
             };
 
-            const stepRows = [
-              ["Prepare database", report.steps.prepare_database],
-              ["DB preflight", report.steps.db_preflight],
-              ["E2E security gate", report.steps.e2e_security],
-              ["E2E smoke", report.steps.e2e_smoke]
-            ]
+            const stepRows = orderedStepKeys
+              .map((key) => [stepMeta[key].label, report.steps[key]])
               .map(([name, status]) => `| ${name} | ${toEmoji(status)} \`${status}\` |`)
               .join("\n");
 
+            const firstFailedKey = orderedStepKeys.find((key) => {
+              const status = report.steps[key];
+              return status === "failure" || status === "cancelled";
+            });
+
+            const failedStepBlock = firstFailedKey
+              ? `### What failed next\n- Step: \`${stepMeta[firstFailedKey].label}\`\n- Action: ${stepMeta[firstFailedKey].next}\n`
+              : "### What failed next\n- No failed steps detected.\n";
+
             const summaryBadge = report.status === "passed" ? "[OK] PASSED" : "[FAIL] FAILED";
             const body = `${marker}
-            ## Preview Smoke Summary: ${summaryBadge}
+            ## RSH CI Gate Report
+            ### Preview Smoke: ${summaryBadge}
 
             | Step | Status |
             |---|---|
             ${stepRows}
+
+            ${failedStepBlock}
 
             - Run: [#${report.runNumber}](${report.runUrl})
             - Commit: \`${report.sha.slice(0, 12)}\`

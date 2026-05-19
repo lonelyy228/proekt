@@ -204,6 +204,50 @@ jobs:
             const fs = require("fs");
             const report = JSON.parse(fs.readFileSync(process.env.REPORT_PATH, "utf8"));
             const marker = "<!-- rsh-release-gate-summary -->";
+            const orderedStepKeys = [
+              "prepare_database",
+              "db_preflight",
+              "typecheck",
+              "lint",
+              "unit_tests",
+              "build",
+              "e2e_security",
+              "e2e_smoke"
+            ];
+            const stepMeta = {
+              prepare_database: {
+                label: "Prepare database",
+                next: "Проверь DATABASE_URL/DIRECT_URL, postgres-сервис и prisma migrate deploy output."
+              },
+              db_preflight: {
+                label: "DB preflight",
+                next: "Запусти `npm run db:preflight` локально и исправь миграции/схему."
+              },
+              typecheck: {
+                label: "Typecheck",
+                next: "Запусти `npm run typecheck` локально и исправь TS ошибки."
+              },
+              lint: {
+                label: "Lint",
+                next: "Запусти `npm run lint` и исправь замечания линтера."
+              },
+              unit_tests: {
+                label: "Unit tests",
+                next: "Запусти `npm run test` локально и устрани упавшие unit-тесты."
+              },
+              build: {
+                label: "Build",
+                next: "Запусти `npm run build` и проверь production env constraints."
+              },
+              e2e_security: {
+                label: "E2E security gate",
+                next: "Запусти `npm run test:e2e:security` и исправь security-regression сценарий."
+              },
+              e2e_smoke: {
+                label: "E2E smoke",
+                next: "Запусти `npm run test:e2e:smoke` и проверь API/UI критичный контур."
+              }
+            };
 
             const toEmoji = (status) => {
               if (status === "success") return "[OK]";
@@ -212,26 +256,30 @@ jobs:
               return "[SKIP]";
             };
 
-            const stepRows = [
-              ["Prepare database", report.steps.prepare_database],
-              ["DB preflight", report.steps.db_preflight],
-              ["Typecheck", report.steps.typecheck],
-              ["Lint", report.steps.lint],
-              ["Unit tests", report.steps.unit_tests],
-              ["Build", report.steps.build],
-              ["E2E security gate", report.steps.e2e_security],
-              ["E2E smoke", report.steps.e2e_smoke]
-            ]
+            const stepRows = orderedStepKeys
+              .map((key) => [stepMeta[key].label, report.steps[key]])
               .map(([name, status]) => `| ${name} | ${toEmoji(status)} \`${status}\` |`)
               .join("\n");
 
+            const firstFailedKey = orderedStepKeys.find((key) => {
+              const status = report.steps[key];
+              return status === "failure" || status === "cancelled";
+            });
+
+            const failedStepBlock = firstFailedKey
+              ? `### What failed next\n- Step: \`${stepMeta[firstFailedKey].label}\`\n- Action: ${stepMeta[firstFailedKey].next}\n`
+              : "### What failed next\n- No failed steps detected.\n";
+
             const summaryBadge = report.status === "passed" ? "[OK] PASSED" : "[FAIL] FAILED";
             const body = `${marker}
-            ## Release Gate Summary: ${summaryBadge}
+            ## RSH CI Gate Report
+            ### Release Gate: ${summaryBadge}
 
             | Step | Status |
             |---|---|
             ${stepRows}
+
+            ${failedStepBlock}
 
             - Run: [#${report.runNumber}](${report.runUrl})
             - Commit: \`${report.sha.slice(0, 12)}\`
