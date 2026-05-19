@@ -206,12 +206,25 @@ jobs:
           path: ci-preview-smoke-report.json
           if-no-files-found: error
 
+      - name: Upload Playwright artifacts
+        id: upload_playwright_artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-preview-smoke-playwright-${{ github.run_id }}
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Publish preview summary comment
         if: ${{ always() && github.event.pull_request.head.repo.fork == false }}
         uses: actions/github-script@v7
         env:
           REPORT_PATH: ci-preview-smoke-report.json
           ARTIFACT_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.upload_preview_report.outputs.artifact-id }}
+          PLAYWRIGHT_ARTIFACT_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.upload_playwright_artifacts.outputs.artifact-id }}
         with:
           script: |
             const fs = require("fs");
@@ -276,6 +289,13 @@ jobs:
             const failedStepBlock = firstFailedKey
               ? `### What failed next\n- Step: \`${stepMeta[firstFailedKey].label}\`\n- Action: ${stepMeta[firstFailedKey].next}\n`
               : "### What failed next\n- No failed steps detected.\n";
+            const hasPlaywrightArtifacts = Boolean(
+              process.env.PLAYWRIGHT_ARTIFACT_URL &&
+              !process.env.PLAYWRIGHT_ARTIFACT_URL.endsWith("/artifacts/")
+            );
+            const playwrightArtifactsLine = hasPlaywrightArtifacts
+              ? `[ci-preview-smoke-playwright](${process.env.PLAYWRIGHT_ARTIFACT_URL})`
+              : "not available";
 
             const summaryBadge = report.status === "passed" ? "[OK] PASSED" : "[FAIL] FAILED";
             const body = `${marker}
@@ -292,6 +312,10 @@ jobs:
             - Total gate time: \`${totalGateTime}\`
             - Slowest steps:
             ${slowestStepLines}
+
+            ### Debug Links
+            - Workflow logs: [open run logs](${report.runUrl})
+            - Playwright artifacts: ${playwrightArtifactsLine}
 
             - Run: [#${report.runNumber}](${report.runUrl})
             - Commit: \`${report.sha.slice(0, 12)}\`
