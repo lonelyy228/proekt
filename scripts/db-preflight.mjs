@@ -34,6 +34,8 @@ const ensureMigrationsPresent = () => {
   }
 };
 
+const shouldEnforceMigrations = () => (process.env.DB_PREFLIGHT_STRICT_MIGRATIONS ?? "1") !== "0";
+
 const assertProductionDbUrls = () => {
   if (process.env.NODE_ENV !== "production") {
     return;
@@ -49,8 +51,12 @@ const assertProductionDbUrls = () => {
 };
 
 const runPreflight = async () => {
-  console.log("[db:preflight] 1/3 checking migrations directory");
-  ensureMigrationsPresent();
+  console.log("[db:preflight] 1/3 checking migrations policy");
+  if (shouldEnforceMigrations()) {
+    ensureMigrationsPresent();
+  } else {
+    console.log("[db:preflight] migrations strict mode disabled (DB_PREFLIGHT_STRICT_MIGRATIONS=0), skipping folder check");
+  }
 
   console.log("[db:preflight] 2/3 validating production DB target policy");
   assertProductionDbUrls();
