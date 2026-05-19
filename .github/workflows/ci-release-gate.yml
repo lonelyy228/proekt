@@ -85,23 +85,58 @@ jobs:
 
       - name: Prepare database
         id: prepare_database
-        run: npm run prisma:generate && npm run prisma:deploy && npm run seed
+        run: |
+          start=$(date +%s%3N)
+          set +e
+          npm run prisma:generate && npm run prisma:deploy && npm run seed
+          status=$?
+          end=$(date +%s%3N)
+          echo "duration_ms=$((end-start))" >> "$GITHUB_OUTPUT"
+          exit $status
 
       - name: Run DB preflight
         id: db_preflight
-        run: npm run db:preflight
+        run: |
+          start=$(date +%s%3N)
+          set +e
+          npm run db:preflight
+          status=$?
+          end=$(date +%s%3N)
+          echo "duration_ms=$((end-start))" >> "$GITHUB_OUTPUT"
+          exit $status
 
       - name: Run typecheck
         id: typecheck
-        run: npm run typecheck
+        run: |
+          start=$(date +%s%3N)
+          set +e
+          npm run typecheck
+          status=$?
+          end=$(date +%s%3N)
+          echo "duration_ms=$((end-start))" >> "$GITHUB_OUTPUT"
+          exit $status
 
       - name: Run lint
         id: lint
-        run: npm run lint
+        run: |
+          start=$(date +%s%3N)
+          set +e
+          npm run lint
+          status=$?
+          end=$(date +%s%3N)
+          echo "duration_ms=$((end-start))" >> "$GITHUB_OUTPUT"
+          exit $status
 
       - name: Run unit tests
         id: unit_tests
-        run: npm run test
+        run: |
+          start=$(date +%s%3N)
+          set +e
+          npm run test
+          status=$?
+          end=$(date +%s%3N)
+          echo "duration_ms=$((end-start))" >> "$GITHUB_OUTPUT"
+          exit $status
 
       - name: Run build
         id: build
@@ -111,27 +146,56 @@ jobs:
           STRIPE_SECRET_KEY: sk_live_ci_placeholder_key
           UPLOADTHING_TOKEN: ci-uploadthing-token
           UPLOADTHING_APP_ID: ci-uploadthing-app-id
-        run: npm run build
+        run: |
+          start=$(date +%s%3N)
+          set +e
+          npm run build
+          status=$?
+          end=$(date +%s%3N)
+          echo "duration_ms=$((end-start))" >> "$GITHUB_OUTPUT"
+          exit $status
 
       - name: Run E2E security gate
         id: e2e_security
-        run: npm run test:e2e:security
+        run: |
+          start=$(date +%s%3N)
+          set +e
+          npm run test:e2e:security
+          status=$?
+          end=$(date +%s%3N)
+          echo "duration_ms=$((end-start))" >> "$GITHUB_OUTPUT"
+          exit $status
 
       - name: Run E2E smoke
         id: e2e_smoke
-        run: npm run test:e2e:smoke
+        run: |
+          start=$(date +%s%3N)
+          set +e
+          npm run test:e2e:smoke
+          status=$?
+          end=$(date +%s%3N)
+          echo "duration_ms=$((end-start))" >> "$GITHUB_OUTPUT"
+          exit $status
 
       - name: Build CI release gate report
         if: ${{ always() }}
         env:
           PREPARE_DATABASE_OUTCOME: ${{ steps.prepare_database.outcome }}
+          PREPARE_DATABASE_DURATION: ${{ steps.prepare_database.outputs.duration_ms }}
           DB_PREFLIGHT_OUTCOME: ${{ steps.db_preflight.outcome }}
+          DB_PREFLIGHT_DURATION: ${{ steps.db_preflight.outputs.duration_ms }}
           TYPECHECK_OUTCOME: ${{ steps.typecheck.outcome }}
+          TYPECHECK_DURATION: ${{ steps.typecheck.outputs.duration_ms }}
           LINT_OUTCOME: ${{ steps.lint.outcome }}
+          LINT_DURATION: ${{ steps.lint.outputs.duration_ms }}
           UNIT_TESTS_OUTCOME: ${{ steps.unit_tests.outcome }}
+          UNIT_TESTS_DURATION: ${{ steps.unit_tests.outputs.duration_ms }}
           BUILD_OUTCOME: ${{ steps.build.outcome }}
+          BUILD_DURATION: ${{ steps.build.outputs.duration_ms }}
           E2E_SECURITY_OUTCOME: ${{ steps.e2e_security.outcome }}
+          E2E_SECURITY_DURATION: ${{ steps.e2e_security.outputs.duration_ms }}
           E2E_SMOKE_OUTCOME: ${{ steps.e2e_smoke.outcome }}
+          E2E_SMOKE_DURATION: ${{ steps.e2e_smoke.outputs.duration_ms }}
           WORKFLOW_NAME: ${{ github.workflow }}
           RUN_ID: ${{ github.run_id }}
           RUN_NUMBER: ${{ github.run_number }}
@@ -144,15 +208,44 @@ jobs:
           node - <<'NODE'
           const fs = require("fs");
 
+          const toDuration = (value) => {
+            const parsed = Number.parseInt(value ?? "", 10);
+            return Number.isFinite(parsed) ? parsed : null;
+          };
+
           const steps = {
-            prepare_database: process.env.PREPARE_DATABASE_OUTCOME ?? "skipped",
-            db_preflight: process.env.DB_PREFLIGHT_OUTCOME ?? "skipped",
-            typecheck: process.env.TYPECHECK_OUTCOME ?? "skipped",
-            lint: process.env.LINT_OUTCOME ?? "skipped",
-            unit_tests: process.env.UNIT_TESTS_OUTCOME ?? "skipped",
-            build: process.env.BUILD_OUTCOME ?? "skipped",
-            e2e_security: process.env.E2E_SECURITY_OUTCOME ?? "skipped",
-            e2e_smoke: process.env.E2E_SMOKE_OUTCOME ?? "skipped"
+            prepare_database: {
+              status: process.env.PREPARE_DATABASE_OUTCOME ?? "skipped",
+              durationMs: toDuration(process.env.PREPARE_DATABASE_DURATION)
+            },
+            db_preflight: {
+              status: process.env.DB_PREFLIGHT_OUTCOME ?? "skipped",
+              durationMs: toDuration(process.env.DB_PREFLIGHT_DURATION)
+            },
+            typecheck: {
+              status: process.env.TYPECHECK_OUTCOME ?? "skipped",
+              durationMs: toDuration(process.env.TYPECHECK_DURATION)
+            },
+            lint: {
+              status: process.env.LINT_OUTCOME ?? "skipped",
+              durationMs: toDuration(process.env.LINT_DURATION)
+            },
+            unit_tests: {
+              status: process.env.UNIT_TESTS_OUTCOME ?? "skipped",
+              durationMs: toDuration(process.env.UNIT_TESTS_DURATION)
+            },
+            build: {
+              status: process.env.BUILD_OUTCOME ?? "skipped",
+              durationMs: toDuration(process.env.BUILD_DURATION)
+            },
+            e2e_security: {
+              status: process.env.E2E_SECURITY_OUTCOME ?? "skipped",
+              durationMs: toDuration(process.env.E2E_SECURITY_DURATION)
+            },
+            e2e_smoke: {
+              status: process.env.E2E_SMOKE_OUTCOME ?? "skipped",
+              durationMs: toDuration(process.env.E2E_SMOKE_DURATION)
+            }
           };
 
           const gateOrder = [
@@ -165,7 +258,7 @@ jobs:
             "e2e_security",
             "e2e_smoke"
           ];
-          const gatePassed = gateOrder.every((key) => steps[key] === "success");
+          const gatePassed = gateOrder.every((key) => steps[key].status === "success");
 
           const report = {
             workflow: process.env.WORKFLOW_NAME,
@@ -256,13 +349,20 @@ jobs:
               return "[SKIP]";
             };
 
+            const formatDuration = (value) => {
+              if (typeof value !== "number" || Number.isNaN(value)) {
+                return "-";
+              }
+              return `${(value / 1000).toFixed(2)}s`;
+            };
+
             const stepRows = orderedStepKeys
               .map((key) => [stepMeta[key].label, report.steps[key]])
-              .map(([name, status]) => `| ${name} | ${toEmoji(status)} \`${status}\` |`)
+              .map(([name, step]) => `| ${name} | ${toEmoji(step.status)} \`${step.status}\` | ${formatDuration(step.durationMs)} |`)
               .join("\n");
 
             const firstFailedKey = orderedStepKeys.find((key) => {
-              const status = report.steps[key];
+              const status = report.steps[key].status;
               return status === "failure" || status === "cancelled";
             });
 
@@ -275,8 +375,8 @@ jobs:
             ## RSH CI Gate Report
             ### Release Gate: ${summaryBadge}
 
-            | Step | Status |
-            |---|---|
+            | Step | Status | Duration |
+            |---|---|---|
             ${stepRows}
 
             ${failedStepBlock}
