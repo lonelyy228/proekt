@@ -74,5 +74,23 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      - name: Run release gate
-        run: npm run ci:release-gate
+      - name: Prepare database
+        run: npm run prisma:generate && npm run prisma:deploy && npm run seed
+
+      - name: Run typecheck
+        run: npm run typecheck
+
+      - name: Run lint
+        run: npm run lint
+
+      - name: Run unit tests
+        run: npm run test
+
+      - name: Run build
+        run: npm run build
+
+      - name: Run E2E security gate
+        run: npm run test:e2e:security
+
+      - name: Run E2E smoke
+        run: npm run test:e2e:smoke
