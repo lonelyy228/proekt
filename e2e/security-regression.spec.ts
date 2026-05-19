@@ -37,6 +37,24 @@ const getSetCookieHeaders = (response: APIResponse): string[] =>
     .filter((header) => header.name.toLowerCase() === "set-cookie")
     .map((header) => header.value);
 
+const extractCookieValue = (setCookieHeader: string | undefined): string | null => {
+  if (!setCookieHeader) {
+    return null;
+  }
+
+  const [pair] = setCookieHeader.split(";");
+  if (!pair) {
+    return null;
+  }
+
+  const separatorIndex = pair.indexOf("=");
+  if (separatorIndex < 0) {
+    return null;
+  }
+
+  return pair.slice(separatorIndex + 1);
+};
+
 test.afterAll(async () => {
   await prisma.$disconnect();
 });
@@ -351,4 +369,78 @@ test("security regression: admin webhooks bulk mutation enforces csrf", async ({
     }
   });
   expect(withCsrf.ok()).toBeTruthy();
+});
+
+test("security regression: refresh rotation and logout cookie invalidation", async ({ request }) => {
+  const refreshWithoutCookie = await request.post("/api/auth/refresh", {
+    data: {}
+  });
+  expect(refreshWithoutCookie.status()).toBe(401);
+
+  const refreshWithoutCookiePayload = await parseJson<{
+    success: boolean;
+    error: { code: string };
+  }>(refreshWithoutCookie);
+  expect(refreshWithoutCookiePayload.success).toBeFalsy();
+  expect(refreshWithoutCookiePayload.error.code).toBe("AUTH_ERROR");
+
+  const email = createEmail();
+  const password = createStrongPassword();
+
+  const registerRes = await request.post("/api/auth/register", {
+    data: { email, password }
+  });
+  expect(registerRes.ok()).toBeTruthy();
+
+  const login = await loginByApi(request, { email, password });
+  const loginSetCookies = getSetCookieHeaders(login.response);
+  const loginRefreshCookie = loginSetCookies.find((value) => value.startsWith("refresh_token="));
+  const loginRefreshTokenValue = extractCookieValue(loginRefreshCookie);
+  expect(loginRefreshTokenValue).toBeTruthy();
+
+  await new Promise((resolve) => {
+    setTimeout(resolve, 1100);
+  });
+
+  const refreshRes = await request.post("/api/auth/refresh", {
+    data: {}
+  });
+  expect(refreshRes.ok()).toBeTruthy();
+
+  const refreshPayload = await parseJson<{
+    success: boolean;
+    data: { csrfToken: string };
+  }>(refreshRes);
+  expect(refreshPayload.success).toBeTruthy();
+  expect(refreshPayload.data.csrfToken).toBeTruthy();
+  expect(refreshPayload.data.csrfToken).not.toBe(login.csrfToken);
+
+  const refreshSetCookies = getSetCookieHeaders(refreshRes);
+  const rotatedRefreshCookie = refreshSetCookies.find((value) => value.startsWith("refresh_token="));
+  const rotatedRefreshTokenValue = extractCookieValue(rotatedRefreshCookie);
+  expect(rotatedRefreshTokenValue).toBeTruthy();
+  expect(rotatedRefreshTokenValue).not.toBe(loginRefreshTokenValue);
+
+  const meBeforeLogout = await request.get("/api/auth/me");
+  expect(meBeforeLogout.ok()).toBeTruthy();
+
+  const logoutRes = await request.post("/api/auth/logout", {
+    headers: {
+      "x-csrf-token": refreshPayload.data.csrfToken
+    },
+    data: {}
+  });
+  expect(logoutRes.ok()).toBeTruthy();
+
+  const logoutSetCookies = getSetCookieHeaders(logoutRes).map((value) => value.toLowerCase());
+  const clearedAccessCookie = logoutSetCookies.find((value) => value.startsWith("access_token="));
+  const clearedRefreshCookie = logoutSetCookies.find((value) => value.startsWith("refresh_token="));
+  const clearedCsrfCookie = logoutSetCookies.find((value) => value.startsWith("csrf_token="));
+
+  expect(clearedAccessCookie).toContain("expires=thu, 01 jan 1970");
+  expect(clearedRefreshCookie).toContain("expires=thu, 01 jan 1970");
+  expect(clearedCsrfCookie).toContain("expires=thu, 01 jan 1970");
+
+  const meAfterLogout = await request.get("/api/auth/me");
+  expect(meAfterLogout.status()).toBe(401);
 });
