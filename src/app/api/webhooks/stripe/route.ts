@@ -44,6 +44,12 @@ export async function POST(request: NextRequest): Promise<Response> {
     response.headers.set("x-request-id", requestId);
     return response;
   } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message.toLowerCase() : "";
+    const isSignatureError =
+      errorMessage.includes("signature") ||
+      errorMessage.includes("no signatures found") ||
+      errorMessage.includes("unable to extract timestamp");
+
     logger.error(
       { err: error, requestId, webhookSecretSet: Boolean(env.STRIPE_WEBHOOK_SECRET) },
       "Stripe webhook processing failed"
@@ -56,10 +62,15 @@ export async function POST(request: NextRequest): Promise<Response> {
         method: "POST",
         area: "webhook",
         details: {
-          webhookSecretSet: Boolean(env.STRIPE_WEBHOOK_SECRET)
+          webhookSecretSet: Boolean(env.STRIPE_WEBHOOK_SECRET),
+          isSignatureError
         }
       },
-      "Stripe webhook processing failed"
+      "Stripe webhook processing failed",
+      {
+        level: isSignatureError ? "warning" : "error",
+        sampleRate: isSignatureError ? 0.1 : undefined
+      }
     );
     const response = NextResponse.json({ error: "Webhook processing failed", requestId }, { status: 400 });
     response.headers.set("x-request-id", requestId);

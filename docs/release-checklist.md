@@ -51,6 +51,7 @@
 - Confirm webhook idempotency and replay safety.
 - Confirm `x-request-id` is present in webhook/API responses for incident tracing.
 - Confirm Sentry DSN is configured and receives a test event with `request_id` tag.
+- Tune Sentry sampling knobs (`SENTRY_ERROR_SAMPLE_RATE`, `SENTRY_WARNING_SAMPLE_RATE`, `SENTRY_INFO_SAMPLE_RATE`) for production noise control.
 - Run webhook smoke with test mode events.
 
 ## 6. Quality Gates

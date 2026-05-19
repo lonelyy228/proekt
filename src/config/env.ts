@@ -19,7 +19,10 @@ const envSchema = z.object({
   STORE_USD_TO_RUB_RATE: z.coerce.number().positive().default(90),
   UPLOADTHING_TOKEN: z.string().optional(),
   UPLOADTHING_APP_ID: z.string().optional(),
-  SENTRY_DSN: z.string().optional()
+  SENTRY_DSN: z.string().optional(),
+  SENTRY_ERROR_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(1),
+  SENTRY_WARNING_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.25),
+  SENTRY_INFO_SAMPLE_RATE: z.coerce.number().min(0).max(1).default(0.05)
 });
 
 const parsed = envSchema.safeParse(process.env);

@@ -1,15 +1,20 @@
-﻿import { randomUUID } from "crypto";
+﻿import { createHash, randomUUID } from "crypto";
 import { env } from "@/config/env";
 import { logger } from "@/lib/logger";
 
 type MonitoringLevel = "info" | "warning" | "error";
 
-type MonitoringContext = {
+export type MonitoringContext = {
   requestId?: string;
   endpoint?: string;
   method?: string;
   area?: "api" | "webhook" | "admin";
   details?: Record<string, boolean | number | string | null | undefined>;
+};
+
+type CaptureOptions = {
+  level?: MonitoringLevel;
+  sampleRate?: number;
 };
 
 type SentryDsnConfig = {
@@ -29,6 +34,12 @@ type SentryException = {
       in_app?: boolean;
     }>;
   };
+};
+
+const sampleRateByLevel: Record<MonitoringLevel, number> = {
+  error: env.SENTRY_ERROR_SAMPLE_RATE,
+  warning: env.SENTRY_WARNING_SAMPLE_RATE,
+  info: env.SENTRY_INFO_SAMPLE_RATE
 };
 
 let sentryDsnCache: SentryDsnConfig | null | undefined;
@@ -107,16 +118,70 @@ const toSentryException = (error: unknown): SentryException => {
   };
 };
 
+const normalizeSampleRate = (value: number): number => {
+  if (value <= 0) {
+    return 0;
+  }
+
+  if (value >= 1) {
+    return 1;
+  }
+
+  return value;
+};
+
+const computeStableSample = (fingerprint: string): number => {
+  const digest = createHash("sha256").update(fingerprint).digest("hex");
+  const firstChunk = digest.slice(0, 8);
+  const intValue = Number.parseInt(firstChunk, 16);
+
+  return intValue / 0xffffffff;
+};
+
+export const shouldSampleMonitoringEvent = (
+  level: MonitoringLevel,
+  context: MonitoringContext,
+  message: string,
+  overrideSampleRate?: number
+): boolean => {
+  const configuredRate = overrideSampleRate ?? sampleRateByLevel[level];
+  const sampleRate = normalizeSampleRate(configuredRate);
+
+  if (sampleRate === 0) {
+    return false;
+  }
+
+  if (sampleRate === 1) {
+    return true;
+  }
+
+  const fingerprint = [
+    level,
+    context.requestId ?? "",
+    context.endpoint ?? "",
+    context.method ?? "",
+    context.area ?? "",
+    message
+  ].join("|");
+
+  return computeStableSample(fingerprint) < sampleRate;
+};
+
 const sendSentryEnvelope = async (
   level: MonitoringLevel,
   context: MonitoringContext,
   payload: {
     message: string;
     exception?: SentryException;
-  }
+  },
+  sampleRateOverride?: number
 ): Promise<void> => {
   const config = getSentryConfig();
   if (!config) {
+    return;
+  }
+
+  if (!shouldSampleMonitoringEvent(level, context, payload.message, sampleRateOverride)) {
     return;
   }
 
@@ -168,17 +233,28 @@ const sendSentryEnvelope = async (
 export const captureServerMessage = (
   message: string,
   context: MonitoringContext,
-  level: MonitoringLevel = "info"
+  level: MonitoringLevel = "info",
+  options?: CaptureOptions
 ): void => {
-  void sendSentryEnvelope(level, context, { message });
+  void sendSentryEnvelope(level, context, { message }, options?.sampleRate);
 };
 
-export const captureServerError = (error: unknown, context: MonitoringContext, message: string): void => {
+export const captureServerError = (
+  error: unknown,
+  context: MonitoringContext,
+  message: string,
+  options?: CaptureOptions
+): void => {
   const exception = toSentryException(error);
-  void sendSentryEnvelope("error", context, {
-    message,
-    exception
-  });
+  const level = options?.level ?? "error";
+
+  void sendSentryEnvelope(
+    level,
+    context,
+    {
+      message,
+      exception
+    },
+    options?.sampleRate
+  );
 };
-
-
