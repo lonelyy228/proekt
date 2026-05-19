@@ -16,6 +16,7 @@
     "test:e2e:security": "playwright test e2e/security-regression.spec.ts",
     "ci:preview-smoke": "npm run prisma:generate && npm run prisma:deploy && npm run db:preflight && npm run seed && npm run test:e2e:security && npm run test:e2e:smoke",
     "ci:release-gate": "npm run prisma:generate && npm run prisma:deploy && npm run db:preflight && npm run seed && npm run typecheck && npm run lint && npm run test && npm run build && npm run test:e2e:security && npm run test:e2e:smoke",
+    "gh:branch-protection": "node scripts/setup-branch-protection.mjs",
     "release:verify": "node scripts/release-verify.mjs",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",

@@ -40,6 +40,12 @@ Production-grade Next.js 14 modular monolith for apparel eCommerce with secure a
 - Production rollout checklist: `docs/release-checklist.md`
 - DB migration/rollback runbook: `docs/db-migration-runbook.md`
 - One-command pre-release verification: `npm run release:verify`
+- Configure required branch checks (`preview-smoke`, `release-gate`) for `develop/master`:
+  - PowerShell:
+    - `$env:GITHUB_TOKEN="<repo_admin_token>"`
+    - `npm run gh:branch-protection -- lonelyy228/proekt`
+  - Dry run preview:
+    - `$env:DRY_RUN="1"; npm run gh:branch-protection -- lonelyy228/proekt`
 
 ## Architecture
 
