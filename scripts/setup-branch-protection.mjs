@@ -52,6 +52,16 @@ async function githubRequest(path, init = {}) {
   return response.json();
 }
 
+function parseGithubApiError(error) {
+  const message = typeof error?.message === "string" ? error.message : "";
+  const match = message.match(/^GitHub API (\d{3})\s/);
+  if (!match) {
+    return null;
+  }
+
+  return Number.parseInt(match[1], 10);
+}
+
 function toReviewConfig(current) {
   return {
     dismiss_stale_reviews: current?.dismiss_stale_reviews ?? true,
@@ -62,7 +72,19 @@ function toReviewConfig(current) {
 }
 
 async function updateBranchProtection(branch) {
-  const current = await githubRequest(`/repos/${owner}/${repo}/branches/${branch}/protection`);
+  await githubRequest(`/repos/${owner}/${repo}/branches/${branch}`);
+
+  let current = null;
+  try {
+    current = await githubRequest(`/repos/${owner}/${repo}/branches/${branch}/protection`);
+  } catch (error) {
+    const status = parseGithubApiError(error);
+    if (status !== 404) {
+      throw error;
+    }
+    console.log(`Branch ${branch} has no existing protection. Initializing from defaults.`);
+  }
+
   const existingContexts = Array.isArray(current?.required_status_checks?.contexts)
     ? current.required_status_checks.contexts
     : [];
