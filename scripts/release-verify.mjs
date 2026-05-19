@@ -7,6 +7,13 @@ const smokeSpecs = [
   "e2e/customizer-designs-api.spec.ts"
 ];
 const securitySpecs = ["e2e/security-regression.spec.ts"];
+const buildEnvOverrides = {
+  APP_URL: "https://rsh.example",
+  COOKIE_DOMAIN: "rsh.example",
+  STRIPE_SECRET_KEY: "sk_live_ci_placeholder_key",
+  UPLOADTHING_TOKEN: "ci-uploadthing-token",
+  UPLOADTHING_APP_ID: "ci-uploadthing-app-id"
+};
 
 const runCommand = (command, options = {}) =>
   new Promise((resolve, reject) => {
@@ -157,7 +164,12 @@ const runReleaseVerify = async () => {
   }
 
   console.log("\n[release:verify] 6/6 production build");
-  await runCommandWithRetry("npx next build", 2, 2500);
+  await runCommandWithRetry("npx next build", 2, 2500, {
+    env: {
+      ...process.env,
+      ...buildEnvOverrides
+    }
+  });
 
   console.log("\n[release:verify] completed successfully");
 };

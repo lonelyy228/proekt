@@ -90,6 +90,12 @@ jobs:
         run: npm run test
 
       - name: Run build
+        env:
+          APP_URL: https://rsh.example
+          COOKIE_DOMAIN: rsh.example
+          STRIPE_SECRET_KEY: sk_live_ci_placeholder_key
+          UPLOADTHING_TOKEN: ci-uploadthing-token
+          UPLOADTHING_APP_ID: ci-uploadthing-app-id
         run: npm run build
 
       - name: Run E2E security gate
