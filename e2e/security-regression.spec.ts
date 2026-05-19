@@ -94,3 +94,51 @@ test("security regression: cookie flags + csrf guard + rbac guard", async ({ req
   expect(adminUsersPayload.success).toBeFalsy();
   expect(adminUsersPayload.error.code).toBe("FORBIDDEN");
 });
+
+test("security regression: admin mutation requires csrf even for admin session", async ({ request }) => {
+  const adminLogin = await loginByApi(request, {
+    email: "admin@example.com",
+    password: "ChangeMe123!"
+  });
+
+  const usersList = await request.get("/api/admin/users?page=1&pageSize=5");
+  expect(usersList.ok()).toBeTruthy();
+
+  const usersListPayload = await parseJson<{
+    success: boolean;
+    data: { items: Array<{ id: string }> };
+  }>(usersList);
+  expect(usersListPayload.success).toBeTruthy();
+  expect(usersListPayload.data.items.length).toBeGreaterThan(0);
+
+  const targetUserId = usersListPayload.data.items[0]?.id;
+  expect(targetUserId).toBeTruthy();
+
+  const mutationWithoutCsrf = await request.post("/api/admin/users/bulk", {
+    data: {
+      userIds: [targetUserId],
+      operation: "UNBLOCK",
+      dryRun: true
+    }
+  });
+  expect(mutationWithoutCsrf.status()).toBe(401);
+
+  const mutationWithoutCsrfPayload = await parseJson<{
+    success: boolean;
+    error: { code: string };
+  }>(mutationWithoutCsrf);
+  expect(mutationWithoutCsrfPayload.success).toBeFalsy();
+  expect(mutationWithoutCsrfPayload.error.code).toBe("AUTH_ERROR");
+
+  const mutationWithCsrf = await request.post("/api/admin/users/bulk", {
+    headers: {
+      "x-csrf-token": adminLogin.csrfToken
+    },
+    data: {
+      userIds: [targetUserId],
+      operation: "UNBLOCK",
+      dryRun: true
+    }
+  });
+  expect(mutationWithCsrf.ok()).toBeTruthy();
+});
