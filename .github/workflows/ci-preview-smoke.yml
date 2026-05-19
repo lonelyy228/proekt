@@ -73,6 +73,10 @@ jobs:
           node-version: 20
           cache: npm
 
+      - name: Pin npm version
+        id: pin_npm
+        run: npm install -g npm@11.6.2
+
       - name: Install dependencies
         id: install_dependencies
         run: npm ci
