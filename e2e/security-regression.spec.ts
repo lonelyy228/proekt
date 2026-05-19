@@ -142,3 +142,108 @@ test("security regression: admin mutation requires csrf even for admin session",
   });
   expect(mutationWithCsrf.ok()).toBeTruthy();
 });
+
+test("security regression: admin products bulk mutation enforces csrf", async ({ request }) => {
+  const adminLogin = await loginByApi(request, {
+    email: "admin@example.com",
+    password: "ChangeMe123!"
+  });
+
+  const productsList = await request.get("/api/admin/products?page=1&pageSize=5");
+  expect(productsList.ok()).toBeTruthy();
+
+  const productsListPayload = await parseJson<{
+    success: boolean;
+    data: { items: Array<{ id: string }> };
+  }>(productsList);
+  expect(productsListPayload.success).toBeTruthy();
+  expect(productsListPayload.data.items.length).toBeGreaterThan(0);
+
+  const targetProductId = productsListPayload.data.items[0]?.id;
+  expect(targetProductId).toBeTruthy();
+
+  const withoutCsrf = await request.post("/api/admin/products/bulk", {
+    data: {
+      productIds: [targetProductId],
+      status: "ARCHIVED",
+      dryRun: true
+    }
+  });
+  expect(withoutCsrf.status()).toBe(401);
+
+  const withoutCsrfPayload = await parseJson<{
+    success: boolean;
+    error: { code: string };
+  }>(withoutCsrf);
+  expect(withoutCsrfPayload.success).toBeFalsy();
+  expect(withoutCsrfPayload.error.code).toBe("AUTH_ERROR");
+
+  const withCsrf = await request.post("/api/admin/products/bulk", {
+    headers: {
+      "x-csrf-token": adminLogin.csrfToken
+    },
+    data: {
+      productIds: [targetProductId],
+      status: "ARCHIVED",
+      dryRun: true
+    }
+  });
+  expect(withCsrf.ok()).toBeTruthy();
+});
+
+test("security regression: admin content presets mutation enforces csrf", async ({ request }) => {
+  const adminLogin = await loginByApi(request, {
+    email: "admin@example.com",
+    password: "ChangeMe123!"
+  });
+
+  const presetName = `security_content_${Date.now()}_${Math.round(Math.random() * 100000)}`;
+
+  const withoutCsrf = await request.post("/api/admin/content/presets", {
+    data: {
+      name: presetName,
+      filters: {
+        search: "security-check"
+      },
+      isDefault: false
+    }
+  });
+  expect(withoutCsrf.status()).toBe(401);
+
+  const withoutCsrfPayload = await parseJson<{
+    success: boolean;
+    error: { code: string };
+  }>(withoutCsrf);
+  expect(withoutCsrfPayload.success).toBeFalsy();
+  expect(withoutCsrfPayload.error.code).toBe("AUTH_ERROR");
+
+  const withCsrf = await request.post("/api/admin/content/presets", {
+    headers: {
+      "x-csrf-token": adminLogin.csrfToken
+    },
+    data: {
+      name: presetName,
+      filters: {
+        search: "security-check"
+      },
+      isDefault: false
+    }
+  });
+  expect(withCsrf.ok()).toBeTruthy();
+
+  const withCsrfPayload = await parseJson<{
+    success: boolean;
+    data: { id: string };
+  }>(withCsrf);
+  expect(withCsrfPayload.success).toBeTruthy();
+
+  const cleanup = await request.delete(
+    `/api/admin/content/presets/${encodeURIComponent(withCsrfPayload.data.id)}`,
+    {
+      headers: {
+        "x-csrf-token": adminLogin.csrfToken
+      }
+    }
+  );
+  expect(cleanup.ok()).toBeTruthy();
+});
