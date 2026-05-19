@@ -50,6 +50,7 @@ export const AdminSettingsCenter = (): JSX.Element => {
 
   const activeTab = resolveTab(searchParams.get("tab"));
   const [copyState, setCopyState] = useState<"idle" | "copied" | "error">("idle");
+  const [copyObservabilityState, setCopyObservabilityState] = useState<"idle" | "copied" | "error">("idle");
   const [copyTabLinkState, setCopyTabLinkState] = useState<"idle" | "copied" | "error">("idle");
   const [infoMessage, setInfoMessage] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
@@ -134,6 +135,34 @@ export const AdminSettingsCenter = (): JSX.Element => {
     }
   };
 
+  const copyObservabilitySnapshot = async (): Promise<void> => {
+    if (!runtimeQuery.data) {
+      return;
+    }
+
+    try {
+      const payload = {
+        copiedAt: new Date().toISOString(),
+        sourceUrl: `${window.location.origin}${pathname}${window.location.search}`,
+        generatedAt: runtimeQuery.data.generatedAt,
+        summary: runtimeQuery.data.summary,
+        checks: runtimeQuery.data.checks,
+        sentrySampling: runtimeQuery.data.sentrySampling
+      };
+
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      setCopyObservabilityState("copied");
+      setInfoMessage("Observability snapshot скопирован в буфер обмена");
+      setErrorMessage("");
+      setTimeout(() => setCopyObservabilityState("idle"), 2000);
+    } catch {
+      setCopyObservabilityState("error");
+      setInfoMessage("");
+      setErrorMessage("Не удалось скопировать observability snapshot");
+      setTimeout(() => setCopyObservabilityState("idle"), 2000);
+    }
+  };
+
   const checks = runtimeQuery.data?.checks ?? [];
   const sentrySampling = runtimeQuery.data?.sentrySampling;
   const securityControls = runtimeQuery.data?.securityControls ?? [];
@@ -172,6 +201,20 @@ export const AdminSettingsCenter = (): JSX.Element => {
             }}
           >
             {copyState === "copied" ? "Скопировано" : copyState === "error" ? "Ошибка копирования" : "Скопировать диагностику"}
+          </button>
+          <button
+            type="button"
+            className="rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary disabled:opacity-50"
+            disabled={!runtimeQuery.data}
+            onClick={() => {
+              void copyObservabilitySnapshot();
+            }}
+          >
+            {copyObservabilityState === "copied"
+              ? "Snapshot скопирован"
+              : copyObservabilityState === "error"
+                ? "Ошибка snapshot"
+                : "Copy observability snapshot"}
           </button>
           <button
             type="button"
