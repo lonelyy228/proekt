@@ -44,6 +44,10 @@ Production-grade Next.js 14 modular monolith for apparel eCommerce with secure a
   - PowerShell:
     - `$env:GITHUB_TOKEN="<repo_admin_token>"`
     - `npm run gh:branch-protection -- lonelyy228/proekt`
+  - Only for existing branch list (recommended):
+    - `$env:BRANCHES="develop"; npm run gh:branch-protection -- lonelyy228/proekt`
+  - Strict mode (fail if branch is missing):
+    - `$env:STRICT_BRANCHES="1"; npm run gh:branch-protection -- lonelyy228/proekt`
   - Dry run preview:
     - `$env:DRY_RUN="1"; npm run gh:branch-protection -- lonelyy228/proekt`
 
