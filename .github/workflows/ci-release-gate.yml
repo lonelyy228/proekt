@@ -1,4 +1,4 @@
-name: CI Release Gate
+﻿name: CI Release Gate
 
 on:
   push:
@@ -6,6 +6,11 @@ on:
       - master
       - develop
   pull_request:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
 
 concurrency:
   group: ci-release-gate-${{ github.ref }}
@@ -60,36 +65,46 @@ jobs:
 
     steps:
       - name: Checkout repository
+        id: checkout
         uses: actions/checkout@v4
 
       - name: Setup Node.js
+        id: setup_node
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
 
       - name: Install dependencies
+        id: install_dependencies
         run: npm ci
 
       - name: Install Playwright browser
+        id: install_playwright
         run: npx playwright install --with-deps chromium
 
       - name: Prepare database
+        id: prepare_database
         run: npm run prisma:generate && npm run prisma:deploy && npm run seed
 
       - name: Run DB preflight
+        id: db_preflight
         run: npm run db:preflight
 
       - name: Run typecheck
+        id: typecheck
         run: npm run typecheck
 
       - name: Run lint
+        id: lint
         run: npm run lint
 
       - name: Run unit tests
+        id: unit_tests
         run: npm run test
 
       - name: Run build
+        id: build
         env:
           APP_URL: https://rsh.example
           COOKIE_DOMAIN: rsh.example
@@ -99,7 +114,157 @@ jobs:
         run: npm run build
 
       - name: Run E2E security gate
+        id: e2e_security
         run: npm run test:e2e:security
 
       - name: Run E2E smoke
+        id: e2e_smoke
         run: npm run test:e2e:smoke
+
+      - name: Build CI release gate report
+        if: ${{ always() }}
+        env:
+          PREPARE_DATABASE_OUTCOME: ${{ steps.prepare_database.outcome }}
+          DB_PREFLIGHT_OUTCOME: ${{ steps.db_preflight.outcome }}
+          TYPECHECK_OUTCOME: ${{ steps.typecheck.outcome }}
+          LINT_OUTCOME: ${{ steps.lint.outcome }}
+          UNIT_TESTS_OUTCOME: ${{ steps.unit_tests.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          E2E_SECURITY_OUTCOME: ${{ steps.e2e_security.outcome }}
+          E2E_SMOKE_OUTCOME: ${{ steps.e2e_smoke.outcome }}
+          WORKFLOW_NAME: ${{ github.workflow }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_NUMBER: ${{ github.run_number }}
+          SHA: ${{ github.sha }}
+          REF_NAME: ${{ github.ref_name }}
+          ACTOR: ${{ github.actor }}
+          REPOSITORY: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          node - <<'NODE'
+          const fs = require("fs");
+
+          const steps = {
+            prepare_database: process.env.PREPARE_DATABASE_OUTCOME ?? "skipped",
+            db_preflight: process.env.DB_PREFLIGHT_OUTCOME ?? "skipped",
+            typecheck: process.env.TYPECHECK_OUTCOME ?? "skipped",
+            lint: process.env.LINT_OUTCOME ?? "skipped",
+            unit_tests: process.env.UNIT_TESTS_OUTCOME ?? "skipped",
+            build: process.env.BUILD_OUTCOME ?? "skipped",
+            e2e_security: process.env.E2E_SECURITY_OUTCOME ?? "skipped",
+            e2e_smoke: process.env.E2E_SMOKE_OUTCOME ?? "skipped"
+          };
+
+          const gateOrder = [
+            "prepare_database",
+            "db_preflight",
+            "typecheck",
+            "lint",
+            "unit_tests",
+            "build",
+            "e2e_security",
+            "e2e_smoke"
+          ];
+          const gatePassed = gateOrder.every((key) => steps[key] === "success");
+
+          const report = {
+            workflow: process.env.WORKFLOW_NAME,
+            runId: process.env.RUN_ID,
+            runNumber: process.env.RUN_NUMBER,
+            sha: process.env.SHA,
+            refName: process.env.REF_NAME,
+            actor: process.env.ACTOR,
+            repository: process.env.REPOSITORY,
+            runUrl: `${process.env.SERVER_URL}/${process.env.REPOSITORY}/actions/runs/${process.env.RUN_ID}`,
+            generatedAt: new Date().toISOString(),
+            status: gatePassed ? "passed" : "failed",
+            steps
+          };
+
+          fs.writeFileSync("ci-release-gate-report.json", JSON.stringify(report, null, 2));
+          NODE
+
+      - name: Upload CI release gate report artifact
+        id: upload_release_report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-release-gate-report-${{ github.run_id }}
+          path: ci-release-gate-report.json
+          if-no-files-found: error
+
+      - name: Publish release gate summary comment
+        if: ${{ always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false }}
+        uses: actions/github-script@v7
+        env:
+          REPORT_PATH: ci-release-gate-report.json
+          ARTIFACT_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.upload_release_report.outputs.artifact-id }}
+        with:
+          script: |
+            const fs = require("fs");
+            const report = JSON.parse(fs.readFileSync(process.env.REPORT_PATH, "utf8"));
+            const marker = "<!-- rsh-release-gate-summary -->";
+
+            const toEmoji = (status) => {
+              if (status === "success") return "[OK]";
+              if (status === "failure") return "[FAIL]";
+              if (status === "cancelled") return "[CANCEL]";
+              return "[SKIP]";
+            };
+
+            const stepRows = [
+              ["Prepare database", report.steps.prepare_database],
+              ["DB preflight", report.steps.db_preflight],
+              ["Typecheck", report.steps.typecheck],
+              ["Lint", report.steps.lint],
+              ["Unit tests", report.steps.unit_tests],
+              ["Build", report.steps.build],
+              ["E2E security gate", report.steps.e2e_security],
+              ["E2E smoke", report.steps.e2e_smoke]
+            ]
+              .map(([name, status]) => `| ${name} | ${toEmoji(status)} \`${status}\` |`)
+              .join("\n");
+
+            const summaryBadge = report.status === "passed" ? "[OK] PASSED" : "[FAIL] FAILED";
+            const body = `${marker}
+            ## Release Gate Summary: ${summaryBadge}
+
+            | Step | Status |
+            |---|---|
+            ${stepRows}
+
+            - Run: [#${report.runNumber}](${report.runUrl})
+            - Commit: \`${report.sha.slice(0, 12)}\`
+            - Artifact: [ci-release-gate-report.json](${process.env.ARTIFACT_URL})
+            - Generated: \`${report.generatedAt}\`
+            `;
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100
+            });
+
+            const existing = comments.find(
+              (comment) => comment.user?.type === "Bot" && comment.body?.includes(marker)
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner,
+                repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner,
+                repo,
+                issue_number,
+                body
+              });
+            }
+
