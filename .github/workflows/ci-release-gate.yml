@@ -259,6 +259,10 @@ jobs:
             "e2e_smoke"
           ];
           const gatePassed = gateOrder.every((key) => steps[key].status === "success");
+          const totalDurationMs = gateOrder.reduce((acc, key) => {
+            const value = steps[key].durationMs;
+            return typeof value === "number" ? acc + value : acc;
+          }, 0);
 
           const report = {
             workflow: process.env.WORKFLOW_NAME,
@@ -271,6 +275,7 @@ jobs:
             runUrl: `${process.env.SERVER_URL}/${process.env.REPOSITORY}/actions/runs/${process.env.RUN_ID}`,
             generatedAt: new Date().toISOString(),
             status: gatePassed ? "passed" : "failed",
+            totalDurationMs,
             steps
           };
 
@@ -360,6 +365,18 @@ jobs:
               .map((key) => [stepMeta[key].label, report.steps[key]])
               .map(([name, step]) => `| ${name} | ${toEmoji(step.status)} \`${step.status}\` | ${formatDuration(step.durationMs)} |`)
               .join("\n");
+            const totalGateTime = formatDuration(report.totalDurationMs);
+            const slowestSteps = orderedStepKeys
+              .map((key) => ({
+                label: stepMeta[key].label,
+                durationMs: report.steps[key].durationMs
+              }))
+              .filter((step) => typeof step.durationMs === "number" && !Number.isNaN(step.durationMs))
+              .sort((a, b) => b.durationMs - a.durationMs)
+              .slice(0, 3);
+            const slowestStepLines = slowestSteps.length > 0
+              ? slowestSteps.map((step, index) => `${index + 1}. ${step.label} - ${formatDuration(step.durationMs)}`).join("\n")
+              : "1. N/A";
 
             const firstFailedKey = orderedStepKeys.find((key) => {
               const status = report.steps[key].status;
@@ -380,6 +397,11 @@ jobs:
             ${stepRows}
 
             ${failedStepBlock}
+
+            ### Timing
+            - Total gate time: \`${totalGateTime}\`
+            - Slowest steps:
+            ${slowestStepLines}
 
             - Run: [#${report.runNumber}](${report.runUrl})
             - Commit: \`${report.sha.slice(0, 12)}\`
