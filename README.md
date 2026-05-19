@@ -19,9 +19,10 @@ Production-grade Next.js 14 modular monolith for apparel eCommerce with secure a
    - Copy `.env.example` to `.env`
 3. Start local infrastructure:
    - `docker compose up -d`
-4. Generate prisma client and sync DB schema:
+4. Generate prisma client and apply DB migrations:
    - `npm run prisma:generate`
-   - `npx prisma db push`
+   - `npm run prisma:deploy`
+   - `npm run db:preflight`
 5. Seed initial data:
    - `npm run seed`
 6. Run app:
@@ -33,6 +34,12 @@ Production-grade Next.js 14 modular monolith for apparel eCommerce with secure a
 - Lint: `npm run lint`
 - Tests: `npm run test`
 - Build: `npm run build`
+
+## Release
+
+- Production rollout checklist: `docs/release-checklist.md`
+- DB migration/rollback runbook: `docs/db-migration-runbook.md`
+- One-command pre-release verification: `npm run release:verify`
 
 ## Architecture
 

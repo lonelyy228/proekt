@@ -1,4 +1,4 @@
-﻿import { z } from "zod";
+import { z } from "zod";
 
 const envSchema = z.object({
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
@@ -28,6 +28,50 @@ if (!parsed.success) {
   const details = parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ");
   throw new Error(`Invalid environment configuration: ${details}`);
 }
+
+export const validateProductionEnv = (value: z.infer<typeof envSchema>): void => {
+  if (value.NODE_ENV !== "production") {
+    return;
+  }
+
+  const issues: string[] = [];
+
+  const appUrl = new URL(value.APP_URL);
+  if (appUrl.protocol !== "https:") {
+    issues.push("APP_URL must use https in production");
+  }
+
+  if (appUrl.hostname === "localhost" || appUrl.hostname === "127.0.0.1") {
+    issues.push("APP_URL must not target localhost in production");
+  }
+
+  const cookieDomain = value.COOKIE_DOMAIN.trim().toLowerCase();
+  if (cookieDomain === "localhost") {
+    issues.push("COOKIE_DOMAIN must not be localhost in production");
+  }
+
+  if (cookieDomain.includes(":")) {
+    issues.push("COOKIE_DOMAIN must not contain a port");
+  }
+
+  if (value.JWT_ACCESS_SECRET === value.JWT_REFRESH_SECRET) {
+    issues.push("JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be different");
+  }
+
+  if (!value.UPLOADTHING_TOKEN || !value.UPLOADTHING_APP_ID) {
+    issues.push("UPLOADTHING_TOKEN and UPLOADTHING_APP_ID are required in production");
+  }
+
+  if (!value.STRIPE_SECRET_KEY.startsWith("sk_live_")) {
+    issues.push("STRIPE_SECRET_KEY must be a live key in production");
+  }
+
+  if (issues.length > 0) {
+    throw new Error(`Invalid production environment configuration: ${issues.join("; ")}`);
+  }
+};
+
+validateProductionEnv(parsed.data);
 
 export const env = parsed.data;
 export type Env = typeof env;

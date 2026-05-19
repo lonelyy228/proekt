@@ -77,6 +77,9 @@ jobs:
       - name: Prepare database
         run: npm run prisma:generate && npm run prisma:deploy && npm run seed
 
+      - name: Run DB preflight
+        run: npm run db:preflight
+
       - name: Run typecheck
         run: npm run typecheck
 

@@ -75,6 +75,9 @@ jobs:
       - name: Prepare database
         run: npm run prisma:generate && npm run prisma:deploy && npm run seed
 
+      - name: Run DB preflight
+        run: npm run db:preflight
+
       - name: Run E2E security gate
         run: npm run test:e2e:security
 
