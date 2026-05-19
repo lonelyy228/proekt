@@ -1,0 +1,76 @@
+name: CI Preview Smoke
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: ci-preview-smoke-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  preview-smoke:
+    if: ${{ github.event.pull_request.draft == false }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      NODE_ENV: development
+      NEXT_TELEMETRY_DISABLED: "1"
+      APP_URL: http://localhost:3000
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/rsh_preview?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/rsh_preview?schema=public
+      REDIS_URL: redis://localhost:6379
+      JWT_ACCESS_SECRET: ci_jwt_access_secret_at_least_32_chars_long____
+      JWT_REFRESH_SECRET: ci_jwt_refresh_secret_at_least_32_chars_long___
+      JWT_KEY_ID: ci-key-1
+      REFRESH_TOKEN_PEPPER: ci_refresh_pepper_1234567890
+      ACCESS_TOKEN_TTL_SECONDS: "900"
+      REFRESH_TOKEN_TTL_DAYS: "14"
+      COOKIE_DOMAIN: localhost
+      STRIPE_SECRET_KEY: sk_test_ci_dummy_key
+      STRIPE_WEBHOOK_SECRET: whsec_ci_dummy_secret
+      STRIPE_PRICE_CURRENCY: usd
+      STORE_USD_TO_RUB_RATE: "90"
+      PLAYWRIGHT_TEST: "1"
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rsh_preview
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d rsh_preview"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Run preview smoke
+        run: npm run ci:preview-smoke
