@@ -17,6 +17,12 @@ export type AdminRuntimeSnapshot = {
     warning: number;
     critical: number;
   };
+  sentrySampling: {
+    configured: boolean;
+    errorRate: number;
+    warningRate: number;
+    infoRate: number;
+  };
   securityControls: string[];
   operationsChecklist: string[];
 };

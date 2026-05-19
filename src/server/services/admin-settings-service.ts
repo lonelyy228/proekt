@@ -114,6 +114,13 @@ const getSentryCheck = (): AdminRuntimeCheck => {
   };
 };
 
+const getSentrySamplingSnapshot = () => ({
+  configured: Boolean(env.SENTRY_DSN),
+  errorRate: env.SENTRY_ERROR_SAMPLE_RATE,
+  warningRate: env.SENTRY_WARNING_SAMPLE_RATE,
+  infoRate: env.SENTRY_INFO_SAMPLE_RATE
+});
+
 const getCookieDomainCheck = (): AdminRuntimeCheck => {
   const isLocalDomain = env.COOKIE_DOMAIN.includes("localhost");
 
@@ -158,6 +165,7 @@ export const adminSettingsService = {
       generatedAt: new Date().toISOString(),
       checks,
       summary,
+      sentrySampling: getSentrySamplingSnapshot(),
       securityControls: [
         "JWT access + rotating refresh token, хранение только в HttpOnly cookies",
         "CSRF-проверка для state-changing запросов",
