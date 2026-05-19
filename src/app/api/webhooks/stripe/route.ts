@@ -18,26 +18,21 @@ export async function POST(request: NextRequest): Promise<Response> {
   const rawBody = await request.text();
 
   try {
-    const processed = await checkoutService.processStripeWebhook(signature, rawBody, { requestId });
+    const processed = await checkoutService.processStripeWebhook(signature, rawBody);
     captureServerMessage("Stripe webhook processed", {
       requestId,
       endpoint: "/api/webhooks/stripe",
       method: "POST",
       area: "webhook",
       details: {
-        duplicate: processed.duplicate,
-        durationMs: processed.durationMs,
-        replayed: processed.replayed
+        processed: true,
+        result: JSON.stringify(processed)
       }
     });
     const response = NextResponse.json(
       {
         received: true,
-        requestId,
-        eventId: processed.eventId,
-        eventType: processed.eventType,
-        duplicate: processed.duplicate,
-        durationMs: processed.durationMs
+        requestId
       },
       { status: 200 }
     );

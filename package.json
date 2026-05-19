@@ -12,7 +12,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:smoke": "playwright test e2e/admin-ops-smoke-stage3.spec.ts e2e/customizer-designs-api.spec.ts",
+    "test:e2e:smoke": "playwright test e2e/admin-dashboard.spec.ts e2e/admin-analytics.spec.ts",
     "test:e2e:security": "playwright test e2e/security-regression.spec.ts",
     "ci:preview-smoke": "npm run prisma:ci:bootstrap && npm run db:preflight && npm run test:e2e:security && npm run test:e2e:smoke",
     "ci:release-gate": "npm run prisma:ci:bootstrap && npm run db:preflight && npm run typecheck && npm run lint && npm run test && npm run build && npm run test:e2e:security && npm run test:e2e:smoke",
