@@ -1,4 +1,7 @@
 import { test, expect, APIRequestContext, APIResponse } from "@playwright/test";
+import { PrismaClient } from "@prisma/client";
+
+const prisma = new PrismaClient();
 
 const createStrongPassword = (): string => "StrongPass1!";
 const createEmail = (): string => `e2e_security_${Date.now()}_${Math.round(Math.random() * 100000)}@example.com`;
@@ -33,6 +36,10 @@ const getSetCookieHeaders = (response: APIResponse): string[] =>
     .headersArray()
     .filter((header) => header.name.toLowerCase() === "set-cookie")
     .map((header) => header.value);
+
+test.afterAll(async () => {
+  await prisma.$disconnect();
+});
 
 test("security regression: cookie flags + csrf guard + rbac guard", async ({ request }) => {
   const email = createEmail();
@@ -246,4 +253,102 @@ test("security regression: admin content presets mutation enforces csrf", async 
     }
   );
   expect(cleanup.ok()).toBeTruthy();
+});
+
+test("security regression: admin orders bulk mutation enforces csrf", async ({ request }) => {
+  const adminLogin = await loginByApi(request, {
+    email: "admin@example.com",
+    password: "ChangeMe123!"
+  });
+
+  const adminUser = await prisma.user.findUnique({
+    where: { email: "admin@example.com" },
+    select: { id: true }
+  });
+  expect(adminUser).not.toBeNull();
+  if (!adminUser) {
+    return;
+  }
+
+  const createdOrder = await prisma.order.create({
+    data: {
+      userId: adminUser.id,
+      status: "PENDING",
+      subtotalCents: 10000,
+      shippingCents: 0,
+      taxCents: 800,
+      totalCents: 10800,
+      currency: "USD",
+      shippingAddressJson: {
+        firstName: "Admin",
+        lastName: "Security",
+        line1: "Test Street 1",
+        city: "Moscow",
+        state: "MOW",
+        postalCode: "101000",
+        country: "RU"
+      }
+    }
+  });
+
+  const withoutCsrf = await request.post("/api/admin/orders/bulk", {
+    data: {
+      orderIds: [createdOrder.id],
+      status: "PAID",
+      dryRun: true
+    }
+  });
+  expect(withoutCsrf.status()).toBe(401);
+
+  const withoutCsrfPayload = await parseJson<{
+    success: boolean;
+    error: { code: string };
+  }>(withoutCsrf);
+  expect(withoutCsrfPayload.success).toBeFalsy();
+  expect(withoutCsrfPayload.error.code).toBe("AUTH_ERROR");
+
+  const withCsrf = await request.post("/api/admin/orders/bulk", {
+    headers: {
+      "x-csrf-token": adminLogin.csrfToken
+    },
+    data: {
+      orderIds: [createdOrder.id],
+      status: "PAID",
+      dryRun: true
+    }
+  });
+  expect(withCsrf.ok()).toBeTruthy();
+});
+
+test("security regression: admin webhooks bulk mutation enforces csrf", async ({ request }) => {
+  const adminLogin = await loginByApi(request, {
+    email: "admin@example.com",
+    password: "ChangeMe123!"
+  });
+
+  const withoutCsrf = await request.post("/api/admin/webhooks/stripe/bulk", {
+    data: {
+      limit: 5,
+      dryRun: true
+    }
+  });
+  expect(withoutCsrf.status()).toBe(401);
+
+  const withoutCsrfPayload = await parseJson<{
+    success: boolean;
+    error: { code: string };
+  }>(withoutCsrf);
+  expect(withoutCsrfPayload.success).toBeFalsy();
+  expect(withoutCsrfPayload.error.code).toBe("AUTH_ERROR");
+
+  const withCsrf = await request.post("/api/admin/webhooks/stripe/bulk", {
+    headers: {
+      "x-csrf-token": adminLogin.csrfToken
+    },
+    data: {
+      limit: 5,
+      dryRun: true
+    }
+  });
+  expect(withCsrf.ok()).toBeTruthy();
 });
