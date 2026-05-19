@@ -49,6 +49,8 @@
 - Confirm Stripe checkout creates idempotent sessions.
 - Confirm webhook signature validation is active.
 - Confirm webhook idempotency and replay safety.
+- Confirm `x-request-id` is present in webhook/API responses for incident tracing.
+- Confirm Sentry DSN is configured and receives a test event with `request_id` tag.
 - Run webhook smoke with test mode events.
 
 ## 6. Quality Gates

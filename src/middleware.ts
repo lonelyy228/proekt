@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+﻿import { NextRequest, NextResponse } from "next/server";
 import { cookieConfig } from "@/config/constants";
 
 const protectedPathPrefixes = ["/profile", "/cart", "/checkout", "/favorites", "/editor", "/admin"];
@@ -16,13 +16,30 @@ const isProtectedPath = (pathname: string): boolean =>
 
 const isPublicApi = (pathname: string): boolean => publicApiPaths.includes(pathname);
 
-export async function middleware(request: NextRequest): Promise<NextResponse> {
-  const { pathname } = request.nextUrl;
-
-  const response = NextResponse.next();
+const applySecurityHeaders = (response: NextResponse): NextResponse => {
   Object.entries(securityHeaders).forEach(([header, value]) => {
     response.headers.set(header, value);
   });
+  return response;
+};
+
+export async function middleware(request: NextRequest): Promise<NextResponse> {
+  const { pathname } = request.nextUrl;
+  const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
+
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.set("x-request-id", requestId);
+  requestHeaders.set("x-rsh-pathname", pathname);
+  requestHeaders.set("x-rsh-method", request.method);
+
+  const response = applySecurityHeaders(
+    NextResponse.next({
+      request: {
+        headers: requestHeaders
+      }
+    })
+  );
+  response.headers.set("x-request-id", requestId);
 
   if (!isProtectedPath(pathname) && (!pathname.startsWith("/api/") || isPublicApi(pathname))) {
     return response;
@@ -32,15 +49,21 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 
   if (!token) {
     if (pathname.startsWith("/api/")) {
-      return NextResponse.json(
-        { success: false, error: { code: "AUTH_ERROR", message: "Требуется авторизация" } },
-        { status: 401 }
+      const unauthorizedResponse = applySecurityHeaders(
+        NextResponse.json(
+          { success: false, error: { code: "AUTH_ERROR", message: "Требуется авторизация" } },
+          { status: 401 }
+        )
       );
+      unauthorizedResponse.headers.set("x-request-id", requestId);
+      return unauthorizedResponse;
     }
 
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("next", pathname);
-    return NextResponse.redirect(loginUrl);
+    const redirectResponse = applySecurityHeaders(NextResponse.redirect(loginUrl));
+    redirectResponse.headers.set("x-request-id", requestId);
+    return redirectResponse;
   }
 
   return response;
