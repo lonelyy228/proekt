@@ -142,6 +142,7 @@ jobs:
       - name: Run build
         id: build
         env:
+          NODE_ENV: production
           APP_URL: https://rsh.example
           COOKIE_DOMAIN: rsh.example
           STRIPE_SECRET_KEY: sk_live_ci_placeholder_key
