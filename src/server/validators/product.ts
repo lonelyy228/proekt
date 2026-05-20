@@ -5,6 +5,7 @@ export const productQuerySchema = z.object({
   search: z.string().trim().max(120).optional(),
   category: z.string().trim().max(80).optional(),
   brand: z.string().trim().max(80).optional(),
+  scope: z.enum(["ALL", "BRANDED", "BASICS"]).default("BRANDED"),
   minPrice: z.coerce.number().nonnegative().max(50000).optional(),
   maxPrice: z.coerce.number().nonnegative().max(50000).optional(),
   minPriceCents: z.coerce.number().int().nonnegative().optional(),

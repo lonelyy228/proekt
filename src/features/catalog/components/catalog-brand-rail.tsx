@@ -1,5 +1,5 @@
 ﻿import Link from "next/link";
-import { CATALOG_BRANDS, brandToSlug } from "@/features/catalog/brand-directory";
+import { CATALOG_BRANDED_BRANDS, brandToSlug } from "@/features/catalog/brand-directory";
 import { CatalogPageState, buildCatalogQueryString } from "@/features/catalog/lib/catalog-query";
 
 type CatalogBrandRailProps = {
@@ -21,7 +21,14 @@ export const CatalogBrandRail = ({ state }: CatalogBrandRailProps): JSX.Element 
     </div>
 
     <div className="flex flex-wrap gap-2">
-      {CATALOG_BRANDS.map((brand) => {
+      <Link
+        href={buildHref("/catalog/basics", buildCatalogQueryString({ ...state, brand: undefined, page: 1 }, {}, { omitBrand: true }))}
+        className="rounded-full border border-primary px-3 py-1 text-xs tracking-wide text-primary transition hover:bg-primary/5"
+      >
+        RSH Basics
+      </Link>
+
+      {CATALOG_BRANDED_BRANDS.map((brand) => {
         const brandPath = `/catalog/brands/${brandToSlug(brand)}`;
         const queryWithoutBrand = buildCatalogQueryString(
           {

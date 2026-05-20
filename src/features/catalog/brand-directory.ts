@@ -1,4 +1,6 @@
-﻿export const CATALOG_BRANDS = [
+import { CUSTOMIZER_BASE_BRANDS } from "@/config/customizer";
+
+export const CATALOG_BRANDED_BRANDS = [
   "ADIDAS",
   "NIKE",
   "PUMA",
@@ -10,6 +12,10 @@
   "STONE ISLAND",
   "NEW BALANCE"
 ] as const;
+
+export const CATALOG_BASE_BRANDS = [...CUSTOMIZER_BASE_BRANDS] as const;
+
+export const CATALOG_BRANDS = [...CATALOG_BASE_BRANDS, ...CATALOG_BRANDED_BRANDS] as const;
 
 const compactWhitespace = (value: string): string => value.trim().replace(/\s+/g, " ");
 

@@ -7,6 +7,8 @@ import { ensureCsrfToken } from "@/lib/csrf-client";
 import { useDebouncedValue } from "@/features/admin/hooks/use-debounced-value";
 import { countActiveFilters } from "@/features/admin/lib/admin-table-utils";
 import { AdminSavedViewsPanel } from "@/features/admin/components/admin-saved-views-panel";
+import { downloadCsvFromResponse } from "@/features/admin/lib/file-download";
+import { AdminStateBlock } from "@/features/admin/components/admin-state-block";
 
 type WebhookEventItem = {
   id: string;
@@ -28,6 +30,7 @@ type BulkWebhookResponse = {
   dryRun: boolean;
   matchedCount: number;
   replayedCount: number;
+  failedCount?: number;
 };
 
 type WebhookPresetFiltersPayload = {
@@ -43,6 +46,24 @@ type AdminWebhookFilterPreset = {
   updatedAt: string;
   filters: WebhookPresetFiltersPayload;
 };
+
+type WebhookQuickFilterType = {
+  value: string;
+  count: number;
+};
+
+type WebhookQuickFilters = {
+  generatedAt: string;
+  windowDays: number;
+  counts: {
+    total: number;
+    processed: number;
+    unprocessed: number;
+  };
+  eventTypes: WebhookQuickFilterType[];
+};
+
+const PAGE_SIZES = [10, 20, 50] as const;
 
 const formatDate = (value: string | null): string =>
   value
@@ -63,6 +84,11 @@ const extractErrorMessage = async (response: Response, fallback: string): Promis
     return fallback;
   }
 };
+
+const statusBadgeClass = (processedAt: string | null): string =>
+  processedAt
+    ? "rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-700 dark:text-emerald-300"
+    : "rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-xs text-amber-700 dark:text-amber-300";
 
 export const AdminWebhookMonitor = (): JSX.Element => {
   const queryClient = useQueryClient();
@@ -93,8 +119,12 @@ export const AdminWebhookMonitor = (): JSX.Element => {
 
     const nextPageRaw = Number(searchParams.get("page") ?? "1");
     const nextPage = Number.isFinite(nextPageRaw) && nextPageRaw > 0 ? Math.floor(nextPageRaw) : 1;
+
     const nextPageSizeRaw = Number(searchParams.get("pageSize") ?? "20");
-    const nextPageSize = nextPageSizeRaw === 10 || nextPageSizeRaw === 20 || nextPageSizeRaw === 50 ? nextPageSizeRaw : 20;
+    const nextPageSize = PAGE_SIZES.includes(nextPageSizeRaw as (typeof PAGE_SIZES)[number])
+      ? nextPageSizeRaw
+      : 20;
+
     const nextEventType = searchParams.get("eventType") ?? "";
     const nextProcessedRaw = searchParams.get("processed");
     const nextProcessed = nextProcessedRaw === "true" || nextProcessedRaw === "false" ? nextProcessedRaw : "";
@@ -103,7 +133,6 @@ export const AdminWebhookMonitor = (): JSX.Element => {
     setPageSize(nextPageSize);
     setEventTypeInput(nextEventType);
     setProcessed(nextProcessed);
-
     lastSerializedFiltersRef.current = searchParams.toString();
     didInitFromUrlRef.current = true;
   }, [searchParams]);
@@ -144,13 +173,13 @@ export const AdminWebhookMonitor = (): JSX.Element => {
     router.replace(href, { scroll: false });
   }, [debouncedEventType, page, pageSize, pathname, processed, router]);
 
-  const queryKey = useMemo(
+  const eventsQueryKey = useMemo(
     () => ["admin-webhooks", page, pageSize, debouncedEventType, processed],
     [debouncedEventType, page, pageSize, processed]
   );
 
   const eventsQuery = useQuery({
-    queryKey,
+    queryKey: eventsQueryKey,
     queryFn: async (): Promise<PaginatedEvents> => {
       const params = new URLSearchParams({
         page: String(page),
@@ -185,7 +214,35 @@ export const AdminWebhookMonitor = (): JSX.Element => {
         throw new Error("Не удалось загрузить пресеты webhooks");
       }
 
-      const payload = (await response.json()) as { success: boolean; data: AdminWebhookFilterPreset[] };
+      const payload = (await response.json()) as {
+        success: boolean;
+        data: AdminWebhookFilterPreset[];
+      };
+      return payload.data;
+    }
+  });
+
+  const quickFiltersQuery = useQuery({
+    queryKey: ["admin-webhooks-quick-filters", debouncedEventType, processed],
+    queryFn: async (): Promise<WebhookQuickFilters> => {
+      const params = new URLSearchParams({
+        limit: "8"
+      });
+      if (debouncedEventType.trim()) {
+        params.set("eventType", debouncedEventType.trim());
+      }
+      if (processed) {
+        params.set("processed", processed);
+      }
+
+      const response = await fetch(`/api/admin/webhooks/stripe/quick-filters?${params.toString()}`, {
+        credentials: "include"
+      });
+      if (!response.ok) {
+        throw new Error("Не удалось загрузить быстрые фильтры webhooks");
+      }
+
+      const payload = (await response.json()) as { success: boolean; data: WebhookQuickFilters };
       return payload.data;
     }
   });
@@ -242,6 +299,7 @@ export const AdminWebhookMonitor = (): JSX.Element => {
       setInfoMessage("Событие отправлено на повторную обработку");
       setErrorMessage("");
       queryClient.invalidateQueries({ queryKey: ["admin-webhooks"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-webhooks-quick-filters"] });
     },
     onError: (error: unknown) => {
       setInfoMessage("");
@@ -283,10 +341,15 @@ export const AdminWebhookMonitor = (): JSX.Element => {
       if (result.dryRun) {
         setInfoMessage(`Проверка: найдено ${result.matchedCount} событий, изменений не внесено`);
       } else {
-        setInfoMessage(`Переобработано событий: ${result.replayedCount} (совпадений: ${result.matchedCount})`);
+        const failedText =
+          result.failedCount && result.failedCount > 0 ? `, ошибок: ${result.failedCount}` : "";
+        setInfoMessage(
+          `Переобработано событий: ${result.replayedCount} (совпадений: ${result.matchedCount}${failedText})`
+        );
       }
       setErrorMessage("");
       queryClient.invalidateQueries({ queryKey: ["admin-webhooks"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-webhooks-quick-filters"] });
     },
     onError: (error: unknown) => {
       setInfoMessage("");
@@ -342,19 +405,22 @@ export const AdminWebhookMonitor = (): JSX.Element => {
       }
 
       const csrfToken = await ensureCsrfToken();
-      const response = await fetch(`/api/admin/webhooks/stripe/presets/${encodeURIComponent(selectedPresetId)}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          "x-csrf-token": csrfToken
-        },
-        credentials: "include",
-        body: JSON.stringify({
-          name: presetName.trim() || undefined,
-          filters: currentFiltersPayload,
-          isDefault: presetAsDefault || undefined
-        })
-      });
+      const response = await fetch(
+        `/api/admin/webhooks/stripe/presets/${encodeURIComponent(selectedPresetId)}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            "x-csrf-token": csrfToken
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            name: presetName.trim() || undefined,
+            filters: currentFiltersPayload,
+            isDefault: presetAsDefault || undefined
+          })
+        }
+      );
 
       const payload = (await response.json()) as {
         success: boolean;
@@ -387,13 +453,16 @@ export const AdminWebhookMonitor = (): JSX.Element => {
       }
 
       const csrfToken = await ensureCsrfToken();
-      const response = await fetch(`/api/admin/webhooks/stripe/presets/${encodeURIComponent(selectedPresetId)}`, {
-        method: "DELETE",
-        headers: {
-          "x-csrf-token": csrfToken
-        },
-        credentials: "include"
-      });
+      const response = await fetch(
+        `/api/admin/webhooks/stripe/presets/${encodeURIComponent(selectedPresetId)}`,
+        {
+          method: "DELETE",
+          headers: {
+            "x-csrf-token": csrfToken
+          },
+          credentials: "include"
+        }
+      );
 
       if (!response.ok) {
         throw new Error(await extractErrorMessage(response, "Не удалось удалить пресет"));
@@ -410,6 +479,38 @@ export const AdminWebhookMonitor = (): JSX.Element => {
     onError: (error: unknown) => {
       setInfoMessage("");
       setErrorMessage(error instanceof Error ? error.message : "Ошибка удаления пресета");
+    }
+  });
+
+  const exportCsvMutation = useMutation({
+    mutationFn: async () => {
+      const params = new URLSearchParams({
+        limit: "1000"
+      });
+      if (debouncedEventType.trim()) {
+        params.set("eventType", debouncedEventType.trim());
+      }
+      if (processed) {
+        params.set("processed", processed);
+      }
+
+      const response = await fetch(`/api/admin/webhooks/stripe/export?${params.toString()}`, {
+        credentials: "include"
+      });
+      if (!response.ok) {
+        throw new Error(await extractErrorMessage(response, "Не удалось экспортировать CSV webhooks"));
+      }
+
+      return downloadCsvFromResponse(response, "stripe_webhooks_export.csv");
+    },
+    onSuccess: (result) => {
+      const countText = result.exportedCount !== null ? ` (${result.exportedCount} строк)` : "";
+      setInfoMessage(`CSV webhook-событий выгружен${countText}`);
+      setErrorMessage("");
+    },
+    onError: (error: unknown) => {
+      setInfoMessage("");
+      setErrorMessage(error instanceof Error ? error.message : "Ошибка при экспорте CSV");
     }
   });
 
@@ -435,18 +536,17 @@ export const AdminWebhookMonitor = (): JSX.Element => {
     pageSize !== 20
   ]);
 
-  const quickEventTypes = useMemo(
-    () =>
-      Array.from(
-        new Set((eventsQuery.data?.items ?? []).map((item) => item.eventType).filter((item) => item.trim().length > 0))
-      ).slice(0, 6),
-    [eventsQuery.data?.items]
-  );
+  const quickTypes = quickFiltersQuery.data?.eventTypes ?? [];
+  const quickCounts = quickFiltersQuery.data?.counts ?? {
+    total: 0,
+    processed: 0,
+    unprocessed: 0
+  };
 
   return (
     <section className="space-y-4">
       <div className="sticky top-0 z-20 rounded-xl border bg-background/95 p-3 backdrop-blur">
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-8">
           <input
             className="rounded-md border bg-background px-3 py-2 text-sm"
             placeholder="Тип события, например checkout.session.completed"
@@ -467,9 +567,11 @@ export const AdminWebhookMonitor = (): JSX.Element => {
             value={String(pageSize)}
             onChange={(event) => setPageSize(Number(event.target.value))}
           >
-            <option value="10">10 на страницу</option>
-            <option value="20">20 на страницу</option>
-            <option value="50">50 на страницу</option>
+            {PAGE_SIZES.map((size) => (
+              <option key={size} value={size}>
+                {size} на страницу
+              </option>
+            ))}
           </select>
           <input
             type="number"
@@ -477,10 +579,10 @@ export const AdminWebhookMonitor = (): JSX.Element => {
             max={100}
             value={bulkLimit}
             onChange={(event) => setBulkLimit(Math.min(100, Math.max(1, Number(event.target.value) || 1)))}
-            className="w-24 rounded-md border bg-background px-3 py-2 text-sm"
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
             aria-label="Лимит bulk"
           />
-          <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <label className="flex items-center gap-2 rounded-md border px-3 py-2 text-sm text-muted-foreground">
             <input
               type="checkbox"
               checked={bulkDryRun}
@@ -494,12 +596,22 @@ export const AdminWebhookMonitor = (): JSX.Element => {
             disabled={bulkReplayMutation.isPending || replayMutation.isPending}
             onClick={() => bulkReplayMutation.mutate()}
           >
-            Массовый повтор обработки
+            {bulkReplayMutation.isPending ? "Выполняем..." : "Bulk replay"}
+          </button>
+          <button
+            type="button"
+            className="rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary disabled:opacity-50"
+            onClick={() => exportCsvMutation.mutate()}
+            disabled={exportCsvMutation.isPending}
+          >
+            {exportCsvMutation.isPending ? "Выгружаем CSV..." : "Экспорт CSV"}
           </button>
           <button
             type="button"
             className="rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary"
-            onClick={() => void copyFiltersLink()}
+            onClick={() => {
+              void copyFiltersLink();
+            }}
           >
             {copyLinkState === "copied"
               ? "Ссылка скопирована"
@@ -507,9 +619,57 @@ export const AdminWebhookMonitor = (): JSX.Element => {
                 ? "Ошибка копирования"
                 : "Скопировать ссылку"}
           </button>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
           <button
             type="button"
-            className="rounded-md border px-3 py-2 text-sm"
+            className="rounded-full border px-2 py-1 hover:border-primary hover:text-primary"
+            onClick={() => {
+              setProcessed("false");
+              setPage(1);
+            }}
+          >
+            Необработанные ({quickCounts.unprocessed})
+          </button>
+          <button
+            type="button"
+            className="rounded-full border px-2 py-1 hover:border-primary hover:text-primary"
+            onClick={() => {
+              setProcessed("true");
+              setPage(1);
+            }}
+          >
+            Обработанные ({quickCounts.processed})
+          </button>
+          <button
+            type="button"
+            className="rounded-full border px-2 py-1 hover:border-primary hover:text-primary"
+            onClick={() => {
+              setProcessed("");
+              setEventTypeInput("");
+              setPage(1);
+            }}
+          >
+            Все ({quickCounts.total})
+          </button>
+
+          {quickTypes.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              className="rounded-full border px-2 py-1 hover:border-primary hover:text-primary"
+              onClick={() => {
+                setEventTypeInput(item.value);
+                setPage(1);
+              }}
+            >
+              {item.value} ({item.count})
+            </button>
+          ))}
+          <button
+            type="button"
+            className="rounded-full border px-2 py-1"
             onClick={() => {
               setPage(1);
               setPageSize(20);
@@ -526,32 +686,17 @@ export const AdminWebhookMonitor = (): JSX.Element => {
           </button>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
-          <button
-            type="button"
-            className="rounded-full border px-2 py-1 hover:border-primary hover:text-primary"
-            onClick={() => setProcessed("false")}
-          >
-            Быстро: необработанные
-          </button>
-          <button
-            type="button"
-            className="rounded-full border px-2 py-1 hover:border-primary hover:text-primary"
-            onClick={() => setProcessed("true")}
-          >
-            Быстро: обработанные
-          </button>
-          {quickEventTypes.map((eventType) => (
-            <button
-              key={eventType}
-              type="button"
-              className="rounded-full border px-2 py-1 hover:border-primary hover:text-primary"
-              onClick={() => setEventTypeInput(eventType)}
-            >
-              event: {eventType}
-            </button>
-          ))}
-        </div>
+        {quickFiltersQuery.data ? (
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Популярные типы за {quickFiltersQuery.data.windowDays} дней
+          </p>
+        ) : null}
+        {quickFiltersQuery.isLoading ? (
+          <p className="mt-2 text-[11px] text-muted-foreground">Загружаем быстрые фильтры...</p>
+        ) : null}
+        {quickFiltersQuery.isError ? (
+          <p className="mt-2 text-[11px] text-destructive">Не удалось загрузить быстрые фильтры.</p>
+        ) : null}
 
         <AdminSavedViewsPanel
           presets={presetsQuery.data ?? []}
@@ -578,14 +723,41 @@ export const AdminWebhookMonitor = (): JSX.Element => {
           onCreate={() => createPresetMutation.mutate()}
           onUpdate={() => updatePresetMutation.mutate()}
           onDelete={() => deletePresetMutation.mutate()}
+          loadingText="Загружаем пресеты webhooks..."
+          errorText="Не удалось загрузить пресеты webhooks."
         />
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span className="rounded-full border px-2 py-1">
+            Найдено событий: {eventsQuery.data ? eventsQuery.data.total : "—"}
+          </span>
+          <span className="rounded-full border px-2 py-1">Активных фильтров: {activeFiltersCount}</span>
+          <span className="rounded-full border px-2 py-1">
+            Unprocessed: {quickCounts.unprocessed} / Processed: {quickCounts.processed}
+          </span>
+        </div>
       </div>
 
       {infoMessage ? <p className="text-sm text-primary">{infoMessage}</p> : null}
       {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
 
-      {eventsQuery.isLoading ? <p className="text-sm text-muted-foreground">Загружаем webhook-события...</p> : null}
-      {eventsQuery.isError ? <p className="text-sm text-destructive">Не удалось загрузить webhook-события.</p> : null}
+      {eventsQuery.isLoading ? (
+        <AdminStateBlock
+          title="Загружаем webhook-события"
+          description="Подготавливаем список Stripe webhook-событий по текущим фильтрам."
+        />
+      ) : null}
+      {eventsQuery.isError ? (
+        <AdminStateBlock
+          title="Ошибка загрузки webhook-событий"
+          description="Не удалось загрузить список webhook-событий. Повтори запрос."
+          actionLabel="Повторить"
+          onAction={() => {
+            void eventsQuery.refetch();
+          }}
+          tone="error"
+        />
+      ) : null}
 
       {eventsQuery.data ? (
         <>
@@ -596,7 +768,7 @@ export const AdminWebhookMonitor = (): JSX.Element => {
                   <th className="p-3">Event ID</th>
                   <th className="p-3">Тип</th>
                   <th className="p-3">Создан</th>
-                  <th className="p-3">Обработан</th>
+                  <th className="p-3">Статус</th>
                   <th className="p-3">Действие</th>
                 </tr>
               </thead>
@@ -606,7 +778,11 @@ export const AdminWebhookMonitor = (): JSX.Element => {
                     <td className="p-3">{item.eventId}</td>
                     <td className="p-3">{item.eventType}</td>
                     <td className="p-3">{formatDate(item.createdAt)}</td>
-                    <td className="p-3">{formatDate(item.processedAt)}</td>
+                    <td className="p-3">
+                      <span className={statusBadgeClass(item.processedAt)}>
+                        {item.processedAt ? `Обработан: ${formatDate(item.processedAt)}` : "Ожидает обработки"}
+                      </span>
+                    </td>
                     <td className="p-3">
                       <button
                         type="button"
@@ -622,6 +798,21 @@ export const AdminWebhookMonitor = (): JSX.Element => {
               </tbody>
             </table>
           </div>
+          {eventsQuery.data.items.length === 0 ? (
+            <AdminStateBlock
+              title="События не найдены"
+              description="По текущим фильтрам нет webhook-событий. Измени или сбрось фильтры."
+              actionLabel="Сбросить фильтры"
+              onAction={() => {
+                setPage(1);
+                setPageSize(20);
+                setEventTypeInput("");
+                setProcessed("");
+                setInfoMessage("");
+                setErrorMessage("");
+              }}
+            />
+          ) : null}
 
           <div className="flex items-center justify-between text-sm">
             <p className="text-muted-foreground">

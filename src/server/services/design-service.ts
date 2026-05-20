@@ -1,17 +1,19 @@
 import { designRepository } from "@/server/repositories/design-repository";
-import { assertValidImageMeta } from "@/server/utils/image-validation";
+import { assertTrustedAssetUrl, assertValidImageDimensions } from "@/server/utils/image-validation";
 import { Prisma } from "@prisma/client";
+import { CustomizerGarmentType } from "@/config/customizer";
 
 export const designService = {
   create: async (userId: string, payload: {
-    garmentType: "TSHIRT" | "HOODIE" | "SWEATSHIRT";
+    garmentType: CustomizerGarmentType;
     garmentColor: string;
     canvasJson: { version: string; objects: Array<Record<string, unknown>> };
     previewUrl: string;
     previewWidth: number;
     previewHeight: number;
   }) => {
-    assertValidImageMeta("image/webp", payload.previewWidth * payload.previewHeight > 0 ? 1024 : 0);
+    assertTrustedAssetUrl(payload.previewUrl);
+    assertValidImageDimensions(payload.previewWidth, payload.previewHeight);
 
     return designRepository.createDesign({
       user: { connect: { id: userId } },

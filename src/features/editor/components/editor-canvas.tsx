@@ -3,44 +3,35 @@
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, FabricImage, FabricObject, Rect, Textbox } from "fabric";
 import { ensureCsrfToken } from "@/lib/csrf-client";
-
-type GarmentType = "TSHIRT" | "HOODIE" | "SWEATSHIRT";
+import { uploadDesignAsset } from "@/lib/uploadthing-client";
+import {
+  CUSTOMIZER_ALLOWED_FONTS,
+  CUSTOMIZER_CANVAS_SIZE,
+  CUSTOMIZER_CONSTRAINTS,
+  CUSTOMIZER_GARMENT_TEMPLATES,
+  CUSTOMIZER_GARMENT_TYPES,
+  CustomizerGarmentType,
+  PrintAreaRect,
+  getGarmentPrintArea
+} from "@/config/customizer";
 
 type LayerItem = {
   layerPosition: number;
   label: string;
 };
 
-type TemplateConfig = {
-  printArea: { left: number; top: number; width: number; height: number };
-  hint: string;
-};
-
-const CANVAS_MAX_SIZE = 720;
 const GRID_STEP = 10;
+const MAX_IMAGE_UPLOAD_SIZE_BYTES = 6 * 1024 * 1024;
+const ALLOWED_IMAGE_MIME_TYPES = new Set(["image/png", "image/jpeg", "image/webp"]);
+const GARMENT_COLORS = ["#111111", "#2d2d2d", "#6d665d", "#f4f1ec", "#8a1118"] as const;
 
-const GARMENT_TEMPLATES: Record<GarmentType, TemplateConfig> = {
-  TSHIRT: {
-    printArea: { left: 140, top: 120, width: 440, height: 480 },
-    hint: "ОБЛАСТЬ ПЕЧАТИ ФУТБОЛКИ"
-  },
-  HOODIE: {
-    printArea: { left: 130, top: 140, width: 460, height: 440 },
-    hint: "ОБЛАСТЬ ГРУДИ ХУДИ"
-  },
-  SWEATSHIRT: {
-    printArea: { left: 150, top: 150, width: 420, height: 420 },
-    hint: "ФРОНТАЛЬНАЯ ЗОНА СВИТШОТА"
-  }
-};
-
-const GARMENT_COLORS = ["#111111", "#2d2d2d", "#6d665d", "#f4f1ec", "#8a1118"];
-const FONT_FAMILIES = ["Space Grotesk", "Arial", "Times New Roman", "Courier New", "Georgia"];
+const clamp = (value: number, minValue: number, maxValue: number): number =>
+  Math.min(Math.max(value, minValue), maxValue);
 
 const clampToGrid = (value: number): number => Math.round(value / GRID_STEP) * GRID_STEP;
 
 const getObjectLabel = (object: FabricObject, index: number): string => {
-  if (object.type === "textbox") {
+  if (object.type === "textbox" || object.type === "i-text" || object.type === "text") {
     return `Текст ${index + 1}`;
   }
 
@@ -51,19 +42,53 @@ const getObjectLabel = (object: FabricObject, index: number): string => {
   return `Слой ${index + 1}`;
 };
 
+const getObjectScaledSize = (object: FabricObject): { width: number; height: number } => {
+  const width =
+    typeof object.getScaledWidth === "function"
+      ? object.getScaledWidth()
+      : Math.abs((object.width ?? 0) * (object.scaleX ?? 1));
+  const height =
+    typeof object.getScaledHeight === "function"
+      ? object.getScaledHeight()
+      : Math.abs((object.height ?? 0) * (object.scaleY ?? 1));
+
+  return {
+    width: Math.max(width, CUSTOMIZER_CONSTRAINTS.minObjectSize),
+    height: Math.max(height, CUSTOMIZER_CONSTRAINTS.minObjectSize)
+  };
+};
+
+const clampObjectToPrintArea = (object: FabricObject, printArea: PrintAreaRect): void => {
+  const { width, height } = getObjectScaledSize(object);
+
+  const maxLeft = printArea.left + Math.max(0, printArea.width - width);
+  const maxTop = printArea.top + Math.max(0, printArea.height - height);
+
+  object.set({
+    left: clamp(object.left ?? printArea.left, printArea.left, maxLeft),
+    top: clamp(object.top ?? printArea.top, printArea.top, maxTop)
+  });
+
+  object.setCoords();
+};
+
 export const EditorCanvas = (): JSX.Element => {
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
   const fabricRef = useRef<Canvas | null>(null);
   const printAreaRef = useRef<Rect | null>(null);
   const hintRef = useRef<Textbox | null>(null);
 
-  const [garmentType, setGarmentType] = useState<GarmentType>("TSHIRT");
+  const [garmentType, setGarmentType] = useState<CustomizerGarmentType>("TSHIRT");
   const [garmentColor, setGarmentColor] = useState<string>(GARMENT_COLORS[0]);
-  const [fontFamily, setFontFamily] = useState<string>(FONT_FAMILIES[0]);
+  const [fontFamily, setFontFamily] = useState<string>(CUSTOMIZER_ALLOWED_FONTS[0]);
   const [layers, setLayers] = useState<LayerItem[]>([]);
   const [saveStatus, setSaveStatus] = useState<string>("");
 
-  const template = useMemo(() => GARMENT_TEMPLATES[garmentType], [garmentType]);
+  const template = useMemo(() => CUSTOMIZER_GARMENT_TEMPLATES[garmentType], [garmentType]);
+
+  const getCurrentPrintArea = useCallback((canvas: Canvas): PrintAreaRect => {
+    return getGarmentPrintArea(garmentType, canvas.getWidth(), canvas.getHeight());
+  }, [garmentType]);
 
   const getEditableObjects = useCallback((canvas: Canvas): FabricObject[] => {
     return canvas
@@ -98,11 +123,13 @@ export const EditorCanvas = (): JSX.Element => {
         canvas.remove(hintRef.current);
       }
 
-      const printArea = new Rect({
-        left: template.printArea.left,
-        top: template.printArea.top,
-        width: template.printArea.width,
-        height: template.printArea.height,
+      const printArea = getCurrentPrintArea(canvas);
+
+      const printAreaLayer = new Rect({
+        left: printArea.left,
+        top: printArea.top,
+        width: printArea.width,
+        height: printArea.height,
         fill: "rgba(255,255,255,0.14)",
         stroke: "#0f0f0f",
         strokeDashArray: [8, 6],
@@ -111,9 +138,9 @@ export const EditorCanvas = (): JSX.Element => {
       });
 
       const hint = new Textbox(template.hint, {
-        left: template.printArea.left + 8,
-        top: template.printArea.top + 8,
-        width: template.printArea.width - 16,
+        left: printArea.left + 8,
+        top: printArea.top + 8,
+        width: printArea.width - 16,
         fontSize: 14,
         fill: "#141414",
         selectable: false,
@@ -121,16 +148,22 @@ export const EditorCanvas = (): JSX.Element => {
         textAlign: "center"
       });
 
-      printAreaRef.current = printArea;
+      printAreaRef.current = printAreaLayer;
       hintRef.current = hint;
 
-      canvas.add(printArea);
+      canvas.add(printAreaLayer);
       canvas.add(hint);
-      canvas.sendObjectToBack(printArea);
+      canvas.sendObjectToBack(printAreaLayer);
       canvas.bringObjectToFront(hint);
+
+      const editable = getEditableObjects(canvas);
+      editable.forEach((object) => {
+        clampObjectToPrintArea(object, printArea);
+      });
+
       canvas.requestRenderAll();
     },
-    [template]
+    [getCurrentPrintArea, getEditableObjects, template.hint]
   );
 
   useEffect(() => {
@@ -139,15 +172,24 @@ export const EditorCanvas = (): JSX.Element => {
     }
 
     const canvas = new Canvas(canvasElementRef.current, {
-      width: CANVAS_MAX_SIZE,
-      height: CANVAS_MAX_SIZE,
+      width: CUSTOMIZER_CANVAS_SIZE.reference,
+      height: CUSTOMIZER_CANVAS_SIZE.reference,
       backgroundColor: garmentColor,
       preserveObjectStacking: true
     });
 
+    const enforceObjectBounds = (target: FabricObject): void => {
+      if (target === printAreaRef.current || target === hintRef.current) {
+        return;
+      }
+
+      const printArea = getCurrentPrintArea(canvas);
+      clampObjectToPrintArea(target, printArea);
+    };
+
     canvas.on("object:moving", (event) => {
       const target = event.target;
-      if (!target || target === printAreaRef.current || target === hintRef.current) {
+      if (!target) {
         return;
       }
 
@@ -155,6 +197,49 @@ export const EditorCanvas = (): JSX.Element => {
         left: clampToGrid(target.left ?? 0),
         top: clampToGrid(target.top ?? 0)
       });
+
+      enforceObjectBounds(target);
+    });
+
+    canvas.on("object:scaling", (event) => {
+      const target = event.target;
+      if (!target) {
+        return;
+      }
+
+      const clampedScaleX = clamp(
+        target.scaleX ?? 1,
+        CUSTOMIZER_CONSTRAINTS.minScale,
+        CUSTOMIZER_CONSTRAINTS.maxScale
+      );
+      const clampedScaleY = clamp(
+        target.scaleY ?? 1,
+        CUSTOMIZER_CONSTRAINTS.minScale,
+        CUSTOMIZER_CONSTRAINTS.maxScale
+      );
+
+      target.set({
+        scaleX: clampedScaleX,
+        scaleY: clampedScaleY
+      });
+
+      enforceObjectBounds(target);
+    });
+
+    canvas.on("object:rotating", (event) => {
+      const target = event.target;
+      if (!target) {
+        return;
+      }
+
+      target.set({
+        angle: clamp(
+          target.angle ?? 0,
+          CUSTOMIZER_CONSTRAINTS.minRotation,
+          CUSTOMIZER_CONSTRAINTS.maxRotation
+        )
+      });
+      enforceObjectBounds(target);
     });
 
     canvas.on("object:added", refreshLayers);
@@ -163,26 +248,11 @@ export const EditorCanvas = (): JSX.Element => {
     fabricRef.current = canvas;
     repaintTemplate(canvas);
 
-    const handleResize = (): void => {
-      const host = canvasElementRef.current;
-      if (!host) {
-        return;
-      }
-
-      const size = Math.min(CANVAS_MAX_SIZE, Math.max(300, window.innerWidth - 48));
-      canvas.setDimensions({ width: size, height: size });
-      canvas.requestRenderAll();
-    };
-
-    handleResize();
-    window.addEventListener("resize", handleResize);
-
     return () => {
-      window.removeEventListener("resize", handleResize);
       canvas.dispose();
       fabricRef.current = null;
     };
-  }, [garmentColor, repaintTemplate, refreshLayers]);
+  }, [garmentColor, getCurrentPrintArea, repaintTemplate, refreshLayers]);
 
   useEffect(() => {
     const canvas = fabricRef.current;
@@ -202,14 +272,18 @@ export const EditorCanvas = (): JSX.Element => {
       return;
     }
 
+    const printArea = getCurrentPrintArea(canvas);
+
     const text = new Textbox("RSH custom", {
-      left: template.printArea.left + 40,
-      top: template.printArea.top + 40,
-      width: template.printArea.width - 80,
+      left: printArea.left + 24,
+      top: printArea.top + 24,
+      width: Math.max(80, printArea.width - 48),
       fontSize: 34,
       fill: "#121212",
       fontFamily
     });
+
+    clampObjectToPrintArea(text, printArea);
 
     canvas.add(text);
     canvas.setActiveObject(text);
@@ -224,18 +298,41 @@ export const EditorCanvas = (): JSX.Element => {
       return;
     }
 
-    const dataUrl = await fileToDataUrl(file);
-    const image = await FabricImage.fromURL(dataUrl);
-    image.set({
-      left: template.printArea.left + 60,
-      top: template.printArea.top + 60,
-      scaleX: 0.45,
-      scaleY: 0.45
-    });
+    if (!ALLOWED_IMAGE_MIME_TYPES.has(file.type)) {
+      setSaveStatus("Поддерживаются только PNG, JPEG и WEBP.");
+      event.target.value = "";
+      return;
+    }
 
-    canvas.add(image);
-    canvas.setActiveObject(image);
-    canvas.requestRenderAll();
+    if (file.size > MAX_IMAGE_UPLOAD_SIZE_BYTES) {
+      setSaveStatus("Файл слишком большой. Максимум 6 MB.");
+      event.target.value = "";
+      return;
+    }
+
+    try {
+      setSaveStatus("Загружаем изображение...");
+      const uploadedFileUrl = await uploadDesignAsset(file);
+      const image = await FabricImage.fromURL(uploadedFileUrl, { crossOrigin: "anonymous" });
+
+      const printArea = getCurrentPrintArea(canvas);
+
+      image.set({
+        left: printArea.left + 24,
+        top: printArea.top + 24,
+        scaleX: 0.45,
+        scaleY: 0.45
+      });
+
+      clampObjectToPrintArea(image, printArea);
+
+      canvas.add(image);
+      canvas.setActiveObject(image);
+      canvas.requestRenderAll();
+      setSaveStatus("");
+    } catch {
+      setSaveStatus("Не удалось загрузить изображение. Попробуйте еще раз.");
+    }
 
     event.target.value = "";
   };
@@ -245,7 +342,16 @@ export const EditorCanvas = (): JSX.Element => {
     const selected = canvas?.getActiveObject();
 
     if (canvas && selected) {
-      selected.set("angle", (selected.angle ?? 0) + angleDelta);
+      selected.set(
+        "angle",
+        clamp(
+          (selected.angle ?? 0) + angleDelta,
+          CUSTOMIZER_CONSTRAINTS.minRotation,
+          CUSTOMIZER_CONSTRAINTS.maxRotation
+        )
+      );
+
+      clampObjectToPrintArea(selected, getCurrentPrintArea(canvas));
       canvas.requestRenderAll();
     }
   };
@@ -286,9 +392,14 @@ export const EditorCanvas = (): JSX.Element => {
     setSaveStatus("Сохраняем дизайн...");
 
     const canvasJson = canvas.toJSON();
-    const previewUrl = canvas.toDataURL({ format: "webp", quality: 0.9, multiplier: 1 });
+    const previewDataUrl = canvas.toDataURL({ format: "webp", quality: 0.9, multiplier: 1 });
 
     try {
+      setSaveStatus("Загружаем превью...");
+      const previewFile = await dataUrlToFile(previewDataUrl, `rsh-preview-${Date.now()}.webp`);
+      const previewUrl = await uploadDesignAsset(previewFile);
+
+      setSaveStatus("Сохраняем дизайн...");
       const csrfToken = await ensureCsrfToken();
       const response = await fetch("/api/designs", {
         method: "POST",
@@ -323,14 +434,14 @@ export const EditorCanvas = (): JSX.Element => {
         <div className="space-y-3">
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Тип вещи</p>
           <div className="flex flex-wrap gap-2">
-            {(["TSHIRT", "HOODIE", "SWEATSHIRT"] as GarmentType[]).map((item) => (
+            {CUSTOMIZER_GARMENT_TYPES.map((item) => (
               <button
                 key={item}
                 className={`rounded-md border px-3 py-2 text-xs tracking-wide ${item === garmentType ? "border-primary bg-primary text-primary-foreground" : ""}`}
                 onClick={() => setGarmentType(item)}
                 type="button"
               >
-                {item}
+                {CUSTOMIZER_GARMENT_TEMPLATES[item].displayName}
               </button>
             ))}
           </div>
@@ -384,7 +495,7 @@ export const EditorCanvas = (): JSX.Element => {
               onChange={(event) => setFontFamily(event.target.value)}
               className="rounded-md border bg-background px-3 py-2 text-sm"
             >
-              {FONT_FAMILIES.map((font) => (
+              {CUSTOMIZER_ALLOWED_FONTS.map((font) => (
                 <option key={font} value={font}>
                   {font}
                 </option>
@@ -392,7 +503,7 @@ export const EditorCanvas = (): JSX.Element => {
             </select>
           </div>
 
-          <canvas ref={canvasElementRef} className="w-full rounded-xl border bg-white" />
+          <canvas ref={canvasElementRef} className="w-full max-w-[720px] rounded-xl border bg-white" />
 
           <button onClick={saveDesign} className="rounded-md bg-primary px-4 py-2 text-primary-foreground" type="button">
             Сохранить дизайн
@@ -421,10 +532,13 @@ export const EditorCanvas = (): JSX.Element => {
   );
 };
 
-const fileToDataUrl = (file: File): Promise<string> =>
-  new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("Не удалось прочитать файл"));
-    reader.readAsDataURL(file);
-  });
+const dataUrlToFile = async (dataUrl: string, fileName: string): Promise<File> => {
+  const response = await fetch(dataUrl);
+
+  if (!response.ok) {
+    throw new Error("Не удалось сгенерировать превью-файл");
+  }
+
+  const blob = await response.blob();
+  return new File([blob], fileName, { type: blob.type || "image/webp" });
+};

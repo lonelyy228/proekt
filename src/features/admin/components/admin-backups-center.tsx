@@ -1,10 +1,11 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { AdminBackupsSnapshot } from "@/features/admin/types/admin-operations";
+import { AdminStateBlock } from "@/features/admin/components/admin-state-block";
 
 type BackupsTab = "policy" | "runbook" | "drills";
 
@@ -33,6 +34,10 @@ export const AdminBackupsCenter = (): JSX.Element => {
   const lastSerializedRef = useRef<string>("");
 
   const activeTab = resolveTab(searchParams.get("tab"));
+  const [copyState, setCopyState] = useState<"idle" | "policy" | "runbook" | "error">("idle");
+  const [copyTabLinkState, setCopyTabLinkState] = useState<"idle" | "copied" | "error">("idle");
+  const [infoMessage, setInfoMessage] = useState<string>("");
+  const [errorMessage, setErrorMessage] = useState<string>("");
 
   useEffect(() => {
     lastSerializedRef.current = searchParams.toString();
@@ -66,6 +71,8 @@ export const AdminBackupsCenter = (): JSX.Element => {
       return;
     }
 
+    setInfoMessage("");
+    setErrorMessage("");
     lastSerializedRef.current = serialized;
     router.replace(serialized ? `${pathname}?${serialized}` : pathname, { scroll: false });
   };
@@ -75,8 +82,19 @@ export const AdminBackupsCenter = (): JSX.Element => {
       return;
     }
 
-    const text = backupsQuery.data.restoreRunbook.map((step, index) => `${index + 1}. ${step}`).join("\n");
-    await navigator.clipboard.writeText(text);
+    try {
+      const text = backupsQuery.data.restoreRunbook.map((step, index) => `${index + 1}. ${step}`).join("\n");
+      await navigator.clipboard.writeText(text);
+      setCopyState("runbook");
+      setInfoMessage("Runbook скопирован");
+      setErrorMessage("");
+      setTimeout(() => setCopyState("idle"), 2000);
+    } catch {
+      setCopyState("error");
+      setInfoMessage("");
+      setErrorMessage("Не удалось скопировать runbook");
+      setTimeout(() => setCopyState("idle"), 2000);
+    }
   };
 
   const copyPolicy = async (): Promise<void> => {
@@ -84,8 +102,35 @@ export const AdminBackupsCenter = (): JSX.Element => {
       return;
     }
 
-    const text = backupsQuery.data.policyChecklist.map((item, index) => `${index + 1}. ${item}`).join("\n");
-    await navigator.clipboard.writeText(text);
+    try {
+      const text = backupsQuery.data.policyChecklist.map((item, index) => `${index + 1}. ${item}`).join("\n");
+      await navigator.clipboard.writeText(text);
+      setCopyState("policy");
+      setInfoMessage("Политика резервирования скопирована");
+      setErrorMessage("");
+      setTimeout(() => setCopyState("idle"), 2000);
+    } catch {
+      setCopyState("error");
+      setInfoMessage("");
+      setErrorMessage("Не удалось скопировать политику");
+      setTimeout(() => setCopyState("idle"), 2000);
+    }
+  };
+
+  const copyTabLink = async (): Promise<void> => {
+    try {
+      const href = `${window.location.origin}${pathname}${window.location.search}`;
+      await navigator.clipboard.writeText(href);
+      setCopyTabLinkState("copied");
+      setInfoMessage("Ссылка на текущую вкладку скопирована");
+      setErrorMessage("");
+      setTimeout(() => setCopyTabLinkState("idle"), 2000);
+    } catch {
+      setCopyTabLinkState("error");
+      setInfoMessage("");
+      setErrorMessage("Не удалось скопировать ссылку на вкладку");
+      setTimeout(() => setCopyTabLinkState("idle"), 2000);
+    }
   };
 
   const providerSummary = useMemo(() => {
@@ -95,6 +140,7 @@ export const AdminBackupsCenter = (): JSX.Element => {
 
     return `${backupsQuery.data.provider.database} • ${backupsQuery.data.provider.uploadStorage}`;
   }, [backupsQuery.data]);
+  const hasSnapshot = Boolean(backupsQuery.data);
 
   return (
     <section className="space-y-4">
@@ -119,7 +165,7 @@ export const AdminBackupsCenter = (): JSX.Element => {
               void copyPolicy();
             }}
           >
-            Скопировать политику
+            {copyState === "policy" ? "Политика скопирована" : "Скопировать политику"}
           </button>
           <button
             type="button"
@@ -129,10 +175,26 @@ export const AdminBackupsCenter = (): JSX.Element => {
               void copyRunbook();
             }}
           >
-            Скопировать runbook
+            {copyState === "runbook" ? "Runbook скопирован" : "Скопировать runbook"}
+          </button>
+          <button
+            type="button"
+            className="rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary"
+            onClick={() => {
+              void copyTabLink();
+            }}
+          >
+            {copyTabLinkState === "copied"
+              ? "Ссылка скопирована"
+              : copyTabLinkState === "error"
+                ? "Ошибка копирования"
+                : "Скопировать ссылку вкладки"}
           </button>
         </div>
       </div>
+
+      {infoMessage ? <p className="text-sm text-primary">{infoMessage}</p> : null}
+      {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
 
       <div className="rounded-xl border p-3">
         <div className="grid gap-2 md:grid-cols-3">
@@ -153,6 +215,15 @@ export const AdminBackupsCenter = (): JSX.Element => {
             );
           })}
         </div>
+        <div className="mt-3 flex flex-wrap gap-2 text-xs text-muted-foreground">
+          <span className="rounded-full border px-2 py-1">Активная вкладка: {activeTab}</span>
+          <span className="rounded-full border px-2 py-1">
+            Drills: {backupsQuery.data ? backupsQuery.data.drills.length : "—"}
+          </span>
+          <span className="rounded-full border px-2 py-1">
+            Notes: {backupsQuery.data ? backupsQuery.data.notes.length : "—"}
+          </span>
+        </div>
       </div>
 
       <div className="rounded-xl border bg-card p-4">
@@ -160,9 +231,33 @@ export const AdminBackupsCenter = (): JSX.Element => {
           <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Health snapshot</h3>
           <span className="rounded-full border px-2 py-1 text-xs text-muted-foreground">{providerSummary}</span>
         </div>
+        {backupsQuery.data ? (
+          <p className="mt-2 text-xs text-muted-foreground">
+            Последнее обновление: {new Date(backupsQuery.data.generatedAt).toLocaleString("ru-RU")}
+          </p>
+        ) : null}
 
-        {backupsQuery.isLoading ? <p className="mt-3 text-sm text-muted-foreground">Загружаем snapshot...</p> : null}
-        {backupsQuery.isError ? <p className="mt-3 text-sm text-destructive">Не удалось загрузить snapshot резервирования.</p> : null}
+        {backupsQuery.isLoading ? (
+          <div className="mt-3">
+            <AdminStateBlock
+              title="Загружаем backup snapshot"
+              description="Проверяем готовность резервирования и восстановления."
+            />
+          </div>
+        ) : null}
+        {backupsQuery.isError ? (
+          <div className="mt-3">
+            <AdminStateBlock
+              title="Ошибка snapshot резервирования"
+              description="Не удалось загрузить backup snapshot. Проверь провайдеры и повтори."
+              actionLabel="Повторить"
+              onAction={() => {
+                void backupsQuery.refetch();
+              }}
+              tone="error"
+            />
+          </div>
+        ) : null}
 
         {backupsQuery.data ? (
           <div className="mt-3 flex flex-wrap gap-2 text-xs">
@@ -178,6 +273,13 @@ export const AdminBackupsCenter = (): JSX.Element => {
           </div>
         ) : null}
       </div>
+
+      {!hasSnapshot ? (
+        <AdminStateBlock
+          title="Snapshot недоступен"
+          description="Проверь подключение провайдеров резервирования и повтори обновление статуса."
+        />
+      ) : null}
 
       {activeTab === "policy" && backupsQuery.data ? (
         <div className="rounded-xl border bg-card p-4">
@@ -231,15 +333,23 @@ export const AdminBackupsCenter = (): JSX.Element => {
                 </tr>
               </thead>
               <tbody>
-                {backupsQuery.data.drills.map((row) => (
-                  <tr key={row.name} className="border-t">
-                    <td className="p-3 font-medium">{row.name}</td>
-                    <td className="p-3">{row.cadence}</td>
-                    <td className="p-3 text-muted-foreground">{row.objective}</td>
-                    <td className="p-3">{row.target}</td>
-                    <td className="p-3">{row.owner}</td>
+                {backupsQuery.data.drills.length > 0 ? (
+                  backupsQuery.data.drills.map((row) => (
+                    <tr key={row.name} className="border-t">
+                      <td className="p-3 font-medium">{row.name}</td>
+                      <td className="p-3">{row.cadence}</td>
+                      <td className="p-3 text-muted-foreground">{row.objective}</td>
+                      <td className="p-3">{row.target}</td>
+                      <td className="p-3">{row.owner}</td>
+                    </tr>
+                  ))
+                ) : (
+                  <tr className="border-t">
+                    <td className="p-4 text-sm text-muted-foreground" colSpan={5}>
+                      Учения пока не настроены. Добавь сценарии восстановления в snapshot.
+                    </td>
                   </tr>
-                ))}
+                )}
               </tbody>
             </table>
           </div>

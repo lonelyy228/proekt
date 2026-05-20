@@ -1,5 +1,11 @@
 import { cartRepository } from "@/server/repositories/cart-repository";
+import { designRepository } from "@/server/repositories/design-repository";
+import { productRepository } from "@/server/repositories/product-repository";
 import { AppError } from "@/server/utils/errors";
+import {
+  extractCustomizerGarmentTypesFromTags,
+  isCustomizerBaseBrand
+} from "@/config/customizer";
 
 export const cartService = {
   getCart: async (userId: string) => {
@@ -44,6 +50,37 @@ export const cartService = {
 
     if (payload.quantity <= 0) {
       throw new AppError("VALIDATION_ERROR", "Quantity must be greater than zero");
+    }
+
+    const productVariant = await productRepository.findVariantForCartInput({
+      productId: payload.productId,
+      variantId: payload.variantId
+    });
+
+    if (!productVariant) {
+      throw new AppError("NOT_FOUND", "Товар или вариант не найдены");
+    }
+
+    if (payload.customizationId) {
+      if (!isCustomizerBaseBrand(productVariant.product.brand)) {
+        throw new AppError(
+          "FORBIDDEN",
+          "Кастомизация доступна только для базовой линейки RSH Basics. Брендовые вещи не кастомизируются."
+        );
+      }
+
+      const design = await designRepository.findById(payload.customizationId, userId);
+      if (!design) {
+        throw new AppError("NOT_FOUND", "Дизайн не найден или недоступен");
+      }
+
+      const allowedGarments = extractCustomizerGarmentTypesFromTags(productVariant.product.tags);
+      if (allowedGarments.length > 0 && !allowedGarments.includes(design.garmentType)) {
+        throw new AppError(
+          "CONFLICT",
+          "Тип дизайна не совпадает с типом выбранной базовой вещи"
+        );
+      }
     }
 
     await cartRepository.upsertItem({

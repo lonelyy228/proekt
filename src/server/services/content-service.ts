@@ -3,6 +3,7 @@ import { contentRepository } from "@/server/repositories/content-repository";
 import { sanitizeText } from "@/server/utils/sanitize";
 import { auditRepository } from "@/server/repositories/audit-repository";
 import { AppError } from "@/server/utils/errors";
+import { buildCsv } from "@/server/utils/csv";
 
 export const contentService = {
   list: async (params: { page: number; pageSize: number; search?: string; status?: ContentStatus }) => {
@@ -59,6 +60,62 @@ export const contentService = {
     });
 
     return post;
+  },
+
+  quickFilters: async (params: { search?: string }) => {
+    const search = params.search ? sanitizeText(params.search) : undefined;
+    const counts = await contentRepository.countByStatus({ search });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      counts
+    };
+  },
+
+  exportCsv: async (
+    adminId: string,
+    params: {
+      limit: number;
+      search?: string;
+      status?: ContentStatus;
+    }
+  ) => {
+    const search = params.search ? sanitizeText(params.search) : undefined;
+    const items = await contentRepository.listForExport({
+      take: params.limit,
+      search,
+      status: params.status
+    });
+
+    const headers = ["postId", "slug", "title", "status", "createdAt", "updatedAt"];
+    const rows = items.map((item) => [
+      item.id,
+      item.slug,
+      item.title,
+      item.status,
+      item.createdAt.toISOString(),
+      item.updatedAt.toISOString()
+    ]);
+
+    const csv = buildCsv(headers, rows);
+
+    await auditRepository.logAdminAction({
+      adminId,
+      action: "CONTENT_EXPORT",
+      targetType: "CONTENT_POST",
+      targetId: "bulk",
+      details: {
+        limit: params.limit,
+        status: params.status ?? null,
+        search: search ?? null,
+        exportedCount: items.length
+      }
+    });
+
+    return {
+      csv,
+      exportedCount: items.length
+    };
   },
 
   update: async (

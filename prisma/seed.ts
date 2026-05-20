@@ -190,6 +190,89 @@ const productSeeds: ProductSeed[] = [
   }
 ];
 
+const baseProductSeeds: ProductSeed[] = [
+  {
+    slug: "rsh-basics-blank-tee-01",
+    brand: "RSH BASICS",
+    name: "RSH Basics Blank Tee",
+    description: "Базовая blank-футболка под кастомизацию в RSH 2D Lab.",
+    shortDescription: "Blank футболка для кастома",
+    tags: ["basics", "blank", "customizer", "customizer:TSHIRT"],
+    basePriceCents: 3900,
+    variant: {
+      sku: "RSH-BSC-TEE-WHT-M",
+      name: "White / M",
+      color: "White",
+      size: "M",
+      priceCents: 3900
+    }
+  },
+  {
+    slug: "rsh-basics-blank-hoodie-02",
+    brand: "RSH BASICS",
+    name: "RSH Basics Blank Hoodie",
+    description: "Базовое blank-худи для персонализации принтов и текста.",
+    shortDescription: "Blank худи для кастома",
+    tags: ["basics", "blank", "customizer", "customizer:HOODIE"],
+    basePriceCents: 5900,
+    variant: {
+      sku: "RSH-BSC-HOOD-BLK-L",
+      name: "Black / L",
+      color: "Black",
+      size: "L",
+      priceCents: 5900
+    }
+  },
+  {
+    slug: "rsh-basics-blank-sweatshirt-03",
+    brand: "RSH BASICS",
+    name: "RSH Basics Blank Sweatshirt",
+    description: "Базовый blank-свитшот для аккуратной кастомизации в минималистичном стиле.",
+    shortDescription: "Blank свитшот для кастома",
+    tags: ["basics", "blank", "customizer", "customizer:SWEATSHIRT"],
+    basePriceCents: 5400,
+    variant: {
+      sku: "RSH-BSC-SWT-GRY-M",
+      name: "Grey / M",
+      color: "Grey",
+      size: "M",
+      priceCents: 5400
+    }
+  },
+  {
+    slug: "rsh-basics-blank-shorts-04",
+    brand: "RSH BASICS",
+    name: "RSH Basics Blank Shorts",
+    description: "Базовые blank-шорты для кастомизации базовых графических решений.",
+    shortDescription: "Blank шорты для кастома",
+    tags: ["basics", "blank", "customizer", "customizer:SHORTS"],
+    basePriceCents: 4200,
+    variant: {
+      sku: "RSH-BSC-SHRT-BLK-M",
+      name: "Black / M",
+      color: "Black",
+      size: "M",
+      priceCents: 4200
+    }
+  },
+  {
+    slug: "rsh-basics-blank-pants-05",
+    brand: "RSH BASICS",
+    name: "RSH Basics Blank Pants",
+    description: "Базовые blank-штаны для кастомизации без вмешательства в брендовые вещи.",
+    shortDescription: "Blank штаны для кастома",
+    tags: ["basics", "blank", "customizer", "customizer:PANTS"],
+    basePriceCents: 6400,
+    variant: {
+      sku: "RSH-BSC-PNTS-CHR-L",
+      name: "Charcoal / L",
+      color: "Charcoal",
+      size: "L",
+      priceCents: 6400
+    }
+  }
+];
+
 async function main(): Promise<void> {
   const userPasswordHash = hashSync("ChangeMe123!", 12);
 
@@ -213,6 +296,19 @@ async function main(): Promise<void> {
       slug: "rsh-brands",
       name: "RSH Brands",
       description: "Популярные брендовые вещи и опциональная кастомизация"
+    }
+  });
+
+  const basicsCategory = await prisma.category.upsert({
+    where: { slug: "rsh-basics" },
+    update: {
+      name: "RSH Basics",
+      description: "Базовая коллекция blank-вещей для кастомизации в RSH 2D Lab"
+    },
+    create: {
+      slug: "rsh-basics",
+      name: "RSH Basics",
+      description: "Базовая коллекция blank-вещей для кастомизации в RSH 2D Lab"
     }
   });
 
@@ -252,7 +348,7 @@ async function main(): Promise<void> {
       }
     });
 
-    await prisma.productVariant.upsert({
+    const variant = await prisma.productVariant.upsert({
       where: { sku: seed.variant.sku },
       update: {
         name: seed.variant.name,
@@ -271,6 +367,87 @@ async function main(): Promise<void> {
         priceCents: seed.variant.priceCents,
         currency: "USD",
         isDefault: true
+      }
+    });
+
+    await prisma.inventoryItem.upsert({
+      where: { variantId: variant.id },
+      update: {
+        productId: product.id,
+        quantity: {
+          increment: 0
+        }
+      },
+      create: {
+        productId: product.id,
+        variantId: variant.id,
+        quantity: 120
+      }
+    });
+  }
+
+  for (const seed of baseProductSeeds) {
+    const product = await prisma.product.upsert({
+      where: { slug: seed.slug },
+      update: {
+        brand: seed.brand,
+        name: seed.name,
+        description: seed.description,
+        shortDescription: seed.shortDescription,
+        tags: seed.tags,
+        status: ProductStatus.ACTIVE,
+        categoryId: basicsCategory.id,
+        basePriceCents: seed.basePriceCents,
+        currency: "USD"
+      },
+      create: {
+        brand: seed.brand,
+        name: seed.name,
+        slug: seed.slug,
+        description: seed.description,
+        shortDescription: seed.shortDescription,
+        tags: seed.tags,
+        status: ProductStatus.ACTIVE,
+        categoryId: basicsCategory.id,
+        basePriceCents: seed.basePriceCents,
+        currency: "USD"
+      }
+    });
+
+    const variant = await prisma.productVariant.upsert({
+      where: { sku: seed.variant.sku },
+      update: {
+        name: seed.variant.name,
+        priceCents: seed.variant.priceCents,
+        currency: "USD",
+        color: seed.variant.color,
+        size: seed.variant.size,
+        isDefault: true
+      },
+      create: {
+        productId: product.id,
+        name: seed.variant.name,
+        sku: seed.variant.sku,
+        color: seed.variant.color,
+        size: seed.variant.size,
+        priceCents: seed.variant.priceCents,
+        currency: "USD",
+        isDefault: true
+      }
+    });
+
+    await prisma.inventoryItem.upsert({
+      where: { variantId: variant.id },
+      update: {
+        productId: product.id,
+        quantity: {
+          increment: 0
+        }
+      },
+      create: {
+        productId: product.id,
+        variantId: variant.id,
+        quantity: 120
       }
     });
   }

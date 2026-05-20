@@ -17,3 +17,10 @@ export const checkoutSessionSchema = z.object({
   successUrl: z.string().url(),
   cancelUrl: z.string().url()
 });
+
+export const checkoutIdempotencyKeySchema = z
+  .string()
+  .trim()
+  .min(8)
+  .max(120)
+  .regex(/^[a-zA-Z0-9:_-]+$/);

@@ -34,5 +34,8 @@ export const rateLimitConfig = {
 
 export const uploadConfig = {
   maxImageSizeBytes: 8 * 1024 * 1024,
-  allowedMimeTypes: ["image/png", "image/jpeg", "image/webp", "image/svg+xml"]
+  maxImageDimensionPx: 4096,
+  maxImagePixels: 16_777_216,
+  allowedMimeTypes: ["image/png", "image/jpeg", "image/webp"] as const,
+  trustedAssetHosts: ["utfs.io", "ufs.sh", "uploadthing.com"] as const
 } as const;

@@ -1,5 +1,32 @@
 import { Prisma, ProductStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { CUSTOMIZER_BASE_BRANDS } from "@/config/customizer";
+import type { CatalogScope } from "@/server/services/product-service";
+
+const buildCategoryScopeWhere = (scope: CatalogScope): Prisma.ProductWhereInput | undefined => {
+  const baseBrandFilters: Prisma.ProductWhereInput[] = CUSTOMIZER_BASE_BRANDS.map((brand) => ({
+    brand: {
+      equals: brand,
+      mode: "insensitive"
+    }
+  }));
+
+  if (scope === "ALL") {
+    return undefined;
+  }
+
+  if (scope === "BASICS") {
+    return {
+      OR: baseBrandFilters
+    };
+  }
+
+  return {
+    NOT: {
+      OR: baseBrandFilters
+    }
+  };
+};
 
 export const productRepository = {
   findCatalog: (args: {
@@ -194,8 +221,17 @@ export const productRepository = {
       }
     }),
 
-  listCategories: () =>
+  listCategories: (scope: CatalogScope) =>
     prisma.category.findMany({
+      where: {
+        products: {
+          some: {
+            deletedAt: null,
+            status: ProductStatus.ACTIVE,
+            ...(buildCategoryScopeWhere(scope) ?? {})
+          }
+        }
+      },
       orderBy: { name: "asc" },
       select: {
         id: true,
@@ -209,6 +245,29 @@ export const productRepository = {
       where: { id },
       select: {
         id: true
+      }
+    }),
+
+  findVariantForCartInput: (params: { productId: string; variantId: string }) =>
+    prisma.productVariant.findFirst({
+      where: {
+        id: params.variantId,
+        productId: params.productId,
+        product: {
+          deletedAt: null,
+          status: ProductStatus.ACTIVE
+        }
+      },
+      select: {
+        id: true,
+        productId: true,
+        product: {
+          select: {
+            id: true,
+            brand: true,
+            tags: true
+          }
+        }
       }
     })
 };

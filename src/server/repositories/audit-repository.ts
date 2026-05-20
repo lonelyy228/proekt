@@ -1,6 +1,49 @@
 import { prisma } from "@/lib/prisma";
 import { Prisma } from "@prisma/client";
 
+type AdminActionWhereParams = {
+  action?: string;
+  targetType?: string;
+  search?: string;
+  createdAtFrom?: Date;
+};
+
+const buildAdminActionWhere = (params: AdminActionWhereParams): Prisma.AdminActionWhereInput => ({
+  action: params.action
+    ? {
+        equals: params.action
+      }
+    : undefined,
+  targetType: params.targetType
+    ? {
+        equals: params.targetType
+      }
+    : undefined,
+  createdAt: params.createdAtFrom
+    ? {
+        gte: params.createdAtFrom
+      }
+    : undefined,
+  OR: params.search
+    ? [
+        {
+          targetId: {
+            contains: params.search,
+            mode: "insensitive"
+          }
+        },
+        {
+          admin: {
+            email: {
+              contains: params.search,
+              mode: "insensitive"
+            }
+          }
+        }
+      ]
+    : undefined
+});
+
 export const auditRepository = {
   log: (params: {
     actorId?: string;
@@ -48,39 +91,30 @@ export const auditRepository = {
     search?: string;
   }) =>
     prisma.adminAction.findMany({
-      where: {
-        action: params.action
-          ? {
-              equals: params.action
-            }
-          : undefined,
-        targetType: params.targetType
-          ? {
-              equals: params.targetType
-            }
-          : undefined,
-        OR: params.search
-          ? [
-              {
-                targetId: {
-                  contains: params.search,
-                  mode: "insensitive"
-                }
-              },
-              {
-                admin: {
-                  email: {
-                    contains: params.search,
-                    mode: "insensitive"
-                  }
-                }
-              }
-            ]
-          : undefined
-      },
+      where: buildAdminActionWhere(params),
       skip: params.skip,
       take: params.take,
       include: { admin: true },
+      orderBy: { createdAt: "desc" }
+    }),
+
+  listAdminActionsForExport: (params: {
+    take: number;
+    action?: string;
+    targetType?: string;
+    search?: string;
+  }) =>
+    prisma.adminAction.findMany({
+      where: buildAdminActionWhere(params),
+      take: params.take,
+      include: {
+        admin: {
+          select: {
+            id: true,
+            email: true
+          }
+        }
+      },
       orderBy: { createdAt: "desc" }
     }),
 
@@ -112,35 +146,68 @@ export const auditRepository = {
 
   countAdminActions: (params?: { action?: string; targetType?: string; search?: string }) =>
     prisma.adminAction.count({
-      where: {
-        action: params?.action
-          ? {
-              equals: params.action
-            }
-          : undefined,
-        targetType: params?.targetType
-          ? {
-              equals: params.targetType
-            }
-          : undefined,
-        OR: params?.search
-          ? [
-              {
-                targetId: {
-                  contains: params.search,
-                  mode: "insensitive"
-                }
-              },
-              {
-                admin: {
-                  email: {
-                    contains: params.search,
-                    mode: "insensitive"
-                  }
-                }
-              }
-            ]
-          : undefined
-      }
+      where: buildAdminActionWhere({
+        action: params?.action,
+        targetType: params?.targetType,
+        search: params?.search
+      })
+    }),
+
+  listPopularAdminActions: (params: {
+    take: number;
+    targetType?: string;
+    search?: string;
+    createdAtFrom?: Date;
+  }) =>
+    prisma.adminAction.groupBy({
+      by: ["action"],
+      where: buildAdminActionWhere({
+        targetType: params.targetType,
+        search: params.search,
+        createdAtFrom: params.createdAtFrom
+      }),
+      _count: {
+        action: true
+      },
+      orderBy: [
+        {
+          _count: {
+            action: "desc"
+          }
+        },
+        {
+          action: "asc"
+        }
+      ],
+      take: params.take
+    }),
+
+  listPopularAdminTargetTypes: (params: {
+    take: number;
+    action?: string;
+    search?: string;
+    createdAtFrom?: Date;
+  }) =>
+    prisma.adminAction.groupBy({
+      by: ["targetType"],
+      where: buildAdminActionWhere({
+        action: params.action,
+        search: params.search,
+        createdAtFrom: params.createdAtFrom
+      }),
+      _count: {
+        targetType: true
+      },
+      orderBy: [
+        {
+          _count: {
+            targetType: "desc"
+          }
+        },
+        {
+          targetType: "asc"
+        }
+      ],
+      take: params.take
     })
 };

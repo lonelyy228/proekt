@@ -3,6 +3,34 @@ import { productRepository } from "@/server/repositories/product-repository";
 import { sanitizeText } from "@/server/utils/sanitize";
 import { AppError } from "@/server/utils/errors";
 import { invalidateCatalogCache, invalidateProductCache } from "@/lib/cache";
+import { CUSTOMIZER_BASE_BRANDS } from "@/config/customizer";
+
+export type CatalogScope = "ALL" | "BRANDED" | "BASICS";
+
+const buildCatalogScopeFilter = (scope: CatalogScope): Prisma.ProductWhereInput | undefined => {
+  const baseBrandFilters: Prisma.ProductWhereInput[] = CUSTOMIZER_BASE_BRANDS.map((brand) => ({
+    brand: {
+      equals: brand,
+      mode: "insensitive"
+    }
+  }));
+
+  if (scope === "ALL") {
+    return undefined;
+  }
+
+  if (scope === "BASICS") {
+    return {
+      OR: baseBrandFilters
+    };
+  }
+
+  return {
+    NOT: {
+      OR: baseBrandFilters
+    }
+  };
+};
 
 export const productService = {
   listCatalog: async (params: {
@@ -12,10 +40,36 @@ export const productService = {
     minPriceCents?: number;
     maxPriceCents?: number;
     sortBy: "newest" | "price_asc" | "price_desc" | "name_asc";
+    scope?: CatalogScope;
     page: number;
     pageSize: number;
     skip: number;
   }) => {
+    const conditions: Prisma.ProductWhereInput[] = [];
+    const scopeFilter = buildCatalogScopeFilter(params.scope ?? "BRANDED");
+    if (scopeFilter) {
+      conditions.push(scopeFilter);
+    }
+
+    if (params.search) {
+      conditions.push({
+        OR: [
+          {
+            name: {
+              contains: sanitizeText(params.search),
+              mode: "insensitive"
+            }
+          },
+          {
+            description: {
+              contains: sanitizeText(params.search),
+              mode: "insensitive"
+            }
+          }
+        ]
+      });
+    }
+
     const where: Prisma.ProductWhereInput = {
       deletedAt: null,
       status: ProductStatus.ACTIVE,
@@ -31,28 +85,13 @@ export const productService = {
           }
         : undefined,
       basePriceCents:
-        params.minPriceCents || params.maxPriceCents
+        params.minPriceCents !== undefined || params.maxPriceCents !== undefined
           ? {
               gte: params.minPriceCents,
               lte: params.maxPriceCents
             }
           : undefined,
-      OR: params.search
-        ? [
-            {
-              name: {
-                contains: sanitizeText(params.search),
-                mode: "insensitive"
-              }
-            },
-            {
-              description: {
-                contains: sanitizeText(params.search),
-                mode: "insensitive"
-              }
-            }
-          ]
-        : undefined
+      AND: conditions.length > 0 ? conditions : undefined
     };
 
     const orderBy: Prisma.ProductOrderByWithRelationInput =
@@ -169,7 +208,7 @@ export const productService = {
     };
   },
 
-  listCategories: () => productRepository.listCategories(),
+  listCategories: (scope: CatalogScope = "ALL") => productRepository.listCategories(scope),
 
   createAdminProduct: async (payload: {
     brand: string;

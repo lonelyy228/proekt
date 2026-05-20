@@ -19,11 +19,34 @@ type DashboardOverviewPayload = {
     publishedPosts: number;
     activeSessions: number;
     pendingWebhookEvents: number;
+    webhooksReceived24h: number;
+    webhooksProcessed24h: number;
+    webhookDuplicates24h: number;
+    webhookFailed24h: number;
+  };
+  webhookRuntime: {
+    windowHours: number;
+    generatedAt: string;
+    counters: {
+      received: number;
+      processed: number;
+      duplicate: number;
+      failed: number;
+      replayed: number;
+    };
+    avgProcessDurationMs: number;
+    lastProcessedAt: string | null;
   };
   health: {
     hasOrderBacklog: boolean;
     hasWebhookBacklog: boolean;
+    hasWebhookProcessingStall: boolean;
+    hasWebhookErrorSpike: boolean;
     hasBlockedUsersSpike: boolean;
+  };
+  webhookHealth: {
+    staleWebhookEvents: number;
+    oldestUnprocessedAgeMinutes: number;
   };
 };
 
@@ -101,14 +124,43 @@ export const AdminDashboardOverview = (): JSX.Element => {
         </article>
 
         <article className="rounded-xl border bg-card p-4">
+          <p className="text-xs text-muted-foreground">Webhooks Stripe</p>
+          <p className="mt-1 text-2xl font-semibold">{data.kpis.pendingWebhookEvents}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            24ч: recv {data.kpis.webhooksReceived24h} • ok {data.kpis.webhooksProcessed24h}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            dup {data.kpis.webhookDuplicates24h} • fail {data.kpis.webhookFailed24h}
+          </p>
+          <Link className="mt-3 inline-block text-xs text-primary underline-offset-2 hover:underline" href="/admin/webhooks">
+            Открыть webhooks
+          </Link>
+        </article>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <article className="rounded-xl border bg-card p-4">
           <p className="text-xs text-muted-foreground">Контент и сессии</p>
           <p className="mt-1 text-2xl font-semibold">{data.kpis.totalPosts}</p>
           <p className="mt-1 text-xs text-muted-foreground">
             Опубликовано: {data.kpis.publishedPosts} • Активные сессии: {data.kpis.activeSessions}
           </p>
-          <Link className="mt-3 inline-block text-xs text-primary underline-offset-2 hover:underline" href="/admin/content">
-            Открыть контент
-          </Link>
+        </article>
+
+        <article className="rounded-xl border bg-card p-4">
+          <p className="text-xs text-muted-foreground">Webhook runtime</p>
+          <p className="mt-1 text-2xl font-semibold">{data.webhookRuntime.avgProcessDurationMs} ms</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            last: {data.webhookRuntime.lastProcessedAt ? new Date(data.webhookRuntime.lastProcessedAt).toLocaleString("ru-RU") : "n/a"}
+          </p>
+        </article>
+
+        <article className="rounded-xl border bg-card p-4">
+          <p className="text-xs text-muted-foreground">Webhook backlog age</p>
+          <p className="mt-1 text-2xl font-semibold">{data.webhookHealth.oldestUnprocessedAgeMinutes} мин</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            stale ({">"}10 мин): {data.webhookHealth.staleWebhookEvents}
+          </p>
         </article>
       </div>
 
@@ -120,6 +172,12 @@ export const AdminDashboardOverview = (): JSX.Element => {
           </span>
           <span className={statusChipClass(data.health.hasWebhookBacklog)}>
             {data.health.hasWebhookBacklog ? "Backlog webhooks: внимание" : "Backlog webhooks: ок"}
+          </span>
+          <span className={statusChipClass(data.health.hasWebhookProcessingStall)}>
+            {data.health.hasWebhookProcessingStall ? "Webhook processing stall: внимание" : "Webhook processing stall: ок"}
+          </span>
+          <span className={statusChipClass(data.health.hasWebhookErrorSpike)}>
+            {data.health.hasWebhookErrorSpike ? "Webhook fail spike: внимание" : "Webhook fail spike: ок"}
           </span>
           <span className={statusChipClass(data.health.hasBlockedUsersSpike)}>
             {data.health.hasBlockedUsersSpike ? "Рост блокировок: внимание" : "Рост блокировок: ок"}

@@ -34,6 +34,16 @@ export const adminUsersQuerySchema = z.object({
     .optional()
 });
 
+export const adminUsersExportQuerySchema = z.object({
+  search: z.string().trim().max(120).optional(),
+  role: z.enum(["USER", "ADMIN"]).optional(),
+  isBlocked: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+  limit: z.coerce.number().int().positive().max(2000).default(1000)
+});
+
 export const adminUserUpdateSchema = z
   .object({
     role: z.enum(["USER", "ADMIN"]).optional(),
@@ -213,6 +223,15 @@ export const adminProductBulkStatusUpdateSchema = z.object({
   dryRun: z.boolean().default(false)
 });
 
+export const adminProductsExportQuerySchema = z.object({
+  search: z.string().trim().max(120).optional(),
+  brand: z.string().trim().max(80).optional(),
+  categoryId: z.string().cuid().optional(),
+  status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).optional(),
+  sortBy: z.enum(["newest", "price_asc", "price_desc", "name_asc"]).default("newest"),
+  limit: z.coerce.number().int().positive().max(2000).default(1000)
+});
+
 export const adminProductFilterPresetIdParamsSchema = z.object({
   presetId: z.string().cuid()
 });
@@ -384,6 +403,24 @@ export const adminWebhookBulkReplaySchema = z.object({
   dryRun: z.boolean().default(false)
 });
 
+export const adminWebhookQuickFiltersQuerySchema = z.object({
+  limit: z.coerce.number().int().min(3).max(20).default(8),
+  eventType: z.string().trim().min(1).max(120).optional(),
+  processed: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional()
+});
+
+export const adminWebhookExportQuerySchema = z.object({
+  eventType: z.string().trim().min(1).max(120).optional(),
+  processed: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+  limit: z.coerce.number().int().positive().max(2000).default(1000)
+});
+
 export const adminWebhookFilterPresetIdParamsSchema = z.object({
   presetId: z.string().cuid()
 });
@@ -416,6 +453,20 @@ export const adminWebhookFilterPresetUpdateSchema = z
 export const adminLogsQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   pageSize: z.coerce.number().int().positive().max(50).default(20),
+  action: z.string().trim().min(1).max(120).optional(),
+  targetType: z.string().trim().min(1).max(120).optional(),
+  search: z.string().trim().max(120).optional()
+});
+
+export const adminLogsExportQuerySchema = z.object({
+  action: z.string().trim().min(1).max(120).optional(),
+  targetType: z.string().trim().min(1).max(120).optional(),
+  search: z.string().trim().max(120).optional(),
+  limit: z.coerce.number().int().positive().max(2000).default(500)
+});
+
+export const adminLogsQuickFiltersQuerySchema = z.object({
+  limit: z.coerce.number().int().min(3).max(20).default(8),
   action: z.string().trim().min(1).max(120).optional(),
   targetType: z.string().trim().min(1).max(120).optional(),
   search: z.string().trim().max(120).optional()
@@ -464,6 +515,16 @@ export const adminContentFilterPresetCreateSchema = z.object({
   name: z.string().trim().min(1).max(60),
   filters: adminContentFilterPresetFiltersSchema.default({}),
   isDefault: z.boolean().default(false)
+});
+
+export const adminContentQuickFiltersQuerySchema = z.object({
+  search: z.string().trim().max(120).optional()
+});
+
+export const adminContentExportQuerySchema = z.object({
+  search: z.string().trim().max(120).optional(),
+  status: z.enum(["DRAFT", "PUBLISHED", "ARCHIVED"]).optional(),
+  limit: z.coerce.number().int().positive().max(2000).default(500)
 });
 
 export const adminContentFilterPresetUpdateSchema = z

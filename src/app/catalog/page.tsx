@@ -12,14 +12,17 @@ export default async function CatalogPage({
   const state = parseCatalogPageState(searchParams);
 
   const [catalog, categories] = await Promise.all([
-    productService.listCatalog(toCatalogServiceParams(state)),
-    productService.listCategories()
+    productService.listCatalog({
+      ...toCatalogServiceParams(state),
+      scope: "BRANDED"
+    }),
+    productService.listCategories("BRANDED")
   ]);
 
   return (
     <CatalogScreen
       title="Брендовые Вещи"
-      subtitle="Подборка RSH: премиальные позиции, архивные силуэты и редкие дропы."
+      subtitle="Подборка RSH: премиальные позиции, архивные силуэты и редкие дропы. Линия для кастомизации вынесена в отдельный раздел RSH Basics."
       state={state}
       basePath="/catalog"
       categories={categories.map((category) => ({ slug: category.slug, name: category.name }))}

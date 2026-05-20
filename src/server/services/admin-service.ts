@@ -12,7 +12,9 @@ import { refreshTokenRepository } from "@/server/repositories/refresh-token-repo
 import { stripeEventRepository } from "@/server/repositories/stripe-event-repository";
 import { checkoutService } from "@/server/services/checkout-service";
 import { AppError } from "@/server/utils/errors";
+import { getAdminActionLabel, getAdminTargetTypeLabel } from "@/server/utils/admin-log-labels";
 import { buildCsv } from "@/server/utils/csv";
+import { webhookObservability } from "@/server/utils/webhook-observability";
 import { OrderStatus, PaymentStatus, Prisma, ProductStatus, Role } from "@prisma/client";
 
 const toUtcDayStart = (date: Date): Date =>
@@ -233,6 +235,11 @@ export const adminService = {
   },
 
   dashboardOverview: async () => {
+    const now = new Date();
+    const webhooksWindowHours = 24;
+    const webhookWindowStart = addUtcDays(now, -1);
+    const staleWebhookBefore = new Date(now.getTime() - 10 * 60 * 1000);
+
     const [
       totalUsers,
       blockedUsers,
@@ -246,7 +253,12 @@ export const adminService = {
       totalPosts,
       publishedPosts,
       activeSessions,
-      pendingWebhookEvents
+      pendingWebhookEvents,
+      webhooksReceived24h,
+      webhooksProcessed24h,
+      staleWebhookEvents,
+      oldestUnprocessedWebhook,
+      webhookRuntimeMetrics
     ] = await Promise.all([
       userRepository.countUsers({}),
       userRepository.countUsers({ isBlocked: true }),
@@ -260,11 +272,23 @@ export const adminService = {
       contentRepository.count({}),
       contentRepository.count({ status: "PUBLISHED" }),
       sessionRepository.countAdminSessions({ status: "ACTIVE" }),
-      stripeEventRepository.countPaginated({ processed: false })
+      stripeEventRepository.countPaginated({ processed: false }),
+      stripeEventRepository.countCreatedSince(webhookWindowStart),
+      stripeEventRepository.countProcessedSince(webhookWindowStart),
+      stripeEventRepository.countUnprocessedOlderThan(staleWebhookBefore),
+      stripeEventRepository.findOldestUnprocessed(),
+      webhookObservability.getSnapshot(webhooksWindowHours)
     ]);
 
+    const webhookUnprocessedAgeMinutes = oldestUnprocessedWebhook
+      ? Math.max(
+          0,
+          Math.round((now.getTime() - oldestUnprocessedWebhook.createdAt.getTime()) / 60000)
+        )
+      : 0;
+
     return {
-      generatedAt: new Date().toISOString(),
+      generatedAt: now.toISOString(),
       kpis: {
         totalUsers,
         blockedUsers,
@@ -278,13 +302,25 @@ export const adminService = {
         totalPosts,
         publishedPosts,
         activeSessions,
-        pendingWebhookEvents
+        pendingWebhookEvents,
+        webhooksReceived24h,
+        webhooksProcessed24h,
+        webhookDuplicates24h: webhookRuntimeMetrics.counters.duplicate,
+        webhookFailed24h: webhookRuntimeMetrics.counters.failed
       },
+      webhookRuntime: webhookRuntimeMetrics,
       health: {
         hasOrderBacklog: pendingOrders > 50,
         hasWebhookBacklog: pendingWebhookEvents > 25,
+        hasWebhookProcessingStall:
+          staleWebhookEvents > 0 || webhookUnprocessedAgeMinutes > 20,
+        hasWebhookErrorSpike: webhookRuntimeMetrics.counters.failed >= 5,
         hasBlockedUsersSpike:
           totalUsers > 0 ? Math.round((blockedUsers / totalUsers) * 10000) / 100 > 5 : false
+      },
+      webhookHealth: {
+        staleWebhookEvents,
+        oldestUnprocessedAgeMinutes: webhookUnprocessedAgeMinutes
       }
     };
   },
@@ -395,6 +431,54 @@ export const adminService = {
       pageSize: params.pageSize,
       total,
       totalPages: Math.max(1, Math.ceil(total / params.pageSize))
+    };
+  },
+
+  exportUsersCsv: async (
+    adminId: string,
+    params: {
+      search?: string;
+      role?: Role;
+      isBlocked?: boolean;
+      limit: number;
+    }
+  ) => {
+    const items = await userRepository.listUsers({
+      skip: 0,
+      take: params.limit,
+      search: params.search,
+      role: params.role,
+      isBlocked: params.isBlocked
+    });
+
+    const headers = ["userId", "email", "role", "isBlocked", "createdAt", "updatedAt"];
+    const rows = items.map((item) => [
+      item.id,
+      item.email,
+      item.role,
+      String(item.isBlocked),
+      item.createdAt.toISOString(),
+      item.updatedAt.toISOString()
+    ]);
+    const csv = buildCsv(headers, rows);
+
+    await auditRepository.logAdminAction({
+      adminId,
+      action: "USER_EXPORT",
+      targetType: "USER",
+      targetId: "bulk",
+      details: {
+        search: params.search ?? null,
+        role: params.role ?? null,
+        isBlocked: params.isBlocked ?? null,
+        limit: params.limit,
+        exportedCount: items.length
+      }
+    });
+
+    return {
+      csv,
+      exportedCount: items.length
     };
   },
 
@@ -901,6 +985,77 @@ export const adminService = {
     status?: ProductStatus;
     sortBy: "newest" | "price_asc" | "price_desc" | "name_asc";
   }) => productService.listAdminProducts(params),
+
+  exportProductsCsv: async (
+    adminId: string,
+    params: {
+      search?: string;
+      brand?: string;
+      categoryId?: string;
+      status?: ProductStatus;
+      sortBy: "newest" | "price_asc" | "price_desc" | "name_asc";
+      limit: number;
+    }
+  ) => {
+    const result = await productService.listAdminProducts({
+      page: 1,
+      pageSize: params.limit,
+      search: params.search,
+      brand: params.brand,
+      categoryId: params.categoryId,
+      status: params.status,
+      sortBy: params.sortBy
+    });
+
+    const headers = [
+      "productId",
+      "brand",
+      "name",
+      "slug",
+      "status",
+      "categoryId",
+      "categoryName",
+      "basePriceCents",
+      "currency",
+      "createdAt",
+      "updatedAt"
+    ];
+    const rows = result.items.map((item) => [
+      item.id,
+      item.brand,
+      item.name,
+      item.slug,
+      item.status,
+      item.categoryId,
+      item.category.name,
+      String(item.basePriceCents),
+      item.currency,
+      item.createdAt.toISOString(),
+      item.updatedAt.toISOString()
+    ]);
+    const csv = buildCsv(headers, rows);
+
+    await auditRepository.logAdminAction({
+      adminId,
+      action: "PRODUCT_EXPORT",
+      targetType: "PRODUCT",
+      targetId: "bulk",
+      details: {
+        search: params.search ?? null,
+        brand: params.brand ?? null,
+        categoryId: params.categoryId ?? null,
+        status: params.status ?? null,
+        sortBy: params.sortBy,
+        limit: params.limit,
+        exportedCount: result.items.length
+      }
+    });
+
+    return {
+      csv,
+      exportedCount: result.items.length
+    };
+  },
 
   listProductCategories: async () => productService.listCategories(),
 
@@ -1510,11 +1665,122 @@ export const adminService = {
     ]);
 
     return {
-      items,
+      items: items.map((item) => ({
+        ...item,
+        actionLabel: getAdminActionLabel(item.action),
+        targetTypeLabel: getAdminTargetTypeLabel(item.targetType)
+      })),
       page: params.page,
       pageSize: params.pageSize,
       total,
       totalPages: Math.max(1, Math.ceil(total / params.pageSize))
+    };
+  },
+
+  exportAdminLogsCsv: async (
+    adminId: string,
+    params: {
+      limit: number;
+      action?: string;
+      targetType?: string;
+      search?: string;
+    }
+  ) => {
+    const items = await auditRepository.listAdminActionsForExport({
+      take: params.limit,
+      action: params.action,
+      targetType: params.targetType,
+      search: params.search
+    });
+
+    const headers = [
+      "logId",
+      "createdAt",
+      "adminEmail",
+      "action",
+      "actionLabel",
+      "targetType",
+      "targetTypeLabel",
+      "targetId",
+      "details"
+    ];
+
+    const rows = items.map((item) => [
+      item.id,
+      item.createdAt.toISOString(),
+      item.admin.email,
+      item.action,
+      getAdminActionLabel(item.action),
+      item.targetType,
+      getAdminTargetTypeLabel(item.targetType),
+      item.targetId,
+      JSON.stringify(item.details ?? {})
+    ]);
+
+    const csv = buildCsv(headers, rows);
+
+    await auditRepository.logAdminAction({
+      adminId,
+      action: "ADMIN_LOG_EXPORT",
+      targetType: "ADMIN_LOG",
+      targetId: "bulk",
+      details: {
+        limit: params.limit,
+        action: params.action ?? null,
+        targetType: params.targetType ?? null,
+        search: params.search ?? null,
+        exportedCount: items.length
+      }
+    });
+
+    return {
+      csv,
+      exportedCount: items.length
+    };
+  },
+
+  listAdminLogsQuickFilters: async (params: {
+    action?: string;
+    targetType?: string;
+    search?: string;
+    limit: number;
+  }) => {
+    const now = new Date();
+    const windowDays = 90;
+    const createdAtFrom = addUtcDays(now, -windowDays);
+
+    const [popularActions, popularTargetTypes] = await Promise.all([
+      auditRepository.listPopularAdminActions({
+        take: params.limit,
+        targetType: params.targetType,
+        search: params.search,
+        createdAtFrom
+      }),
+      auditRepository.listPopularAdminTargetTypes({
+        take: params.limit,
+        action: params.action,
+        search: params.search,
+        createdAtFrom
+      })
+    ]);
+
+    return {
+      generatedAt: now.toISOString(),
+      windowDays,
+      actions: popularActions
+        .map((item) => ({
+          value: item.action,
+          label: getAdminActionLabel(item.action),
+          count: item._count.action
+        }))
+        .filter((item) => item.value.trim().length > 0),
+      targetTypes: popularTargetTypes
+        .map((item) => ({
+          value: item.targetType,
+          label: getAdminTargetTypeLabel(item.targetType),
+          count: item._count.targetType
+        }))
+        .filter((item) => item.value.trim().length > 0)
     };
   },
 
@@ -1711,8 +1977,16 @@ export const adminService = {
       };
     }
 
+    let replayedCount = 0;
+    const failedEventIds: string[] = [];
+
     for (const event of events) {
-      await checkoutService.replayStoredEvent(event.eventId);
+      try {
+        await checkoutService.replayStoredEvent(event.eventId);
+        replayedCount += 1;
+      } catch {
+        failedEventIds.push(event.eventId);
+      }
     }
 
     await auditRepository.logAdminAction({
@@ -1721,7 +1995,9 @@ export const adminService = {
       targetType: "STRIPE_EVENT",
       targetId: "bulk",
       details: {
-        replayedCount: events.length,
+        replayedCount,
+        failedCount: failedEventIds.length,
+        failedEventIds,
         eventType: params.eventType,
         processed: params.processed,
         limit: params.limit
@@ -1731,7 +2007,101 @@ export const adminService = {
     return {
       dryRun: false,
       matchedCount: events.length,
-      replayedCount: events.length
+      replayedCount,
+      failedCount: failedEventIds.length,
+      failedEventIds
+    };
+  },
+
+  listWebhookQuickFilters: async (params: {
+    eventType?: string;
+    processed?: boolean;
+    limit: number;
+  }) => {
+    const now = new Date();
+    const windowDays = 90;
+    const createdAtFrom = addUtcDays(now, -windowDays);
+
+    const [total, processedCount, unprocessedCount, eventTypes] = await Promise.all([
+      stripeEventRepository.countPaginated({
+        eventType: params.eventType,
+        processed: params.processed
+      }),
+      stripeEventRepository.countPaginated({
+        eventType: params.eventType,
+        processed: true
+      }),
+      stripeEventRepository.countPaginated({
+        eventType: params.eventType,
+        processed: false
+      }),
+      stripeEventRepository.listPopularEventTypes({
+        take: params.limit,
+        processed: params.processed,
+        eventTypeContains: params.eventType,
+        createdAtFrom
+      })
+    ]);
+
+    return {
+      generatedAt: now.toISOString(),
+      windowDays,
+      counts: {
+        total,
+        processed: processedCount,
+        unprocessed: unprocessedCount
+      },
+      eventTypes: eventTypes
+        .map((item) => ({
+          value: item.eventType,
+          count: item._count.eventType
+        }))
+        .filter((item) => item.value.trim().length > 0)
+    };
+  },
+
+  exportWebhookEventsCsv: async (
+    adminId: string,
+    params: {
+      eventType?: string;
+      processed?: boolean;
+      limit: number;
+    }
+  ) => {
+    const items = await stripeEventRepository.listForExport({
+      take: params.limit,
+      eventType: params.eventType,
+      processed: params.processed
+    });
+
+    const headers = ["id", "eventId", "eventType", "processed", "createdAt", "processedAt"];
+    const rows = items.map((item) => [
+      item.id,
+      item.eventId,
+      item.eventType,
+      item.processedAt ? "true" : "false",
+      item.createdAt.toISOString(),
+      item.processedAt ? item.processedAt.toISOString() : ""
+    ]);
+
+    const csv = buildCsv(headers, rows);
+
+    await auditRepository.logAdminAction({
+      adminId,
+      action: "WEBHOOK_EXPORT",
+      targetType: "STRIPE_EVENT",
+      targetId: "bulk",
+      details: {
+        limit: params.limit,
+        eventType: params.eventType ?? null,
+        processed: params.processed ?? null,
+        exportedCount: items.length
+      }
+    });
+
+    return {
+      csv,
+      exportedCount: items.length
     };
   },
 

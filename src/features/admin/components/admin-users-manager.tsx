@@ -7,6 +7,8 @@ import { ensureCsrfToken } from "@/lib/csrf-client";
 import { useDebouncedValue } from "@/features/admin/hooks/use-debounced-value";
 import { countActiveFilters } from "@/features/admin/lib/admin-table-utils";
 import { AdminSavedViewsPanel } from "@/features/admin/components/admin-saved-views-panel";
+import { downloadCsvFromResponse } from "@/features/admin/lib/file-download";
+import { AdminStateBlock } from "@/features/admin/components/admin-state-block";
 
 type UserRole = "USER" | "ADMIN";
 type UserBlockedFilter = "" | "true" | "false";
@@ -541,9 +543,46 @@ export const AdminUsersManager = (): JSX.Element => {
     }
   };
 
+  const exportCsvMutation = useMutation({
+    mutationFn: async () => {
+      const params = new URLSearchParams({
+        limit: "1000"
+      });
+
+      if (debouncedSearch.trim()) {
+        params.set("search", debouncedSearch.trim());
+      }
+      if (role) {
+        params.set("role", role);
+      }
+      if (isBlockedFilter) {
+        params.set("isBlocked", isBlockedFilter);
+      }
+
+      const response = await fetch(`/api/admin/users/export?${params.toString()}`, {
+        credentials: "include"
+      });
+      if (!response.ok) {
+        throw new Error(await extractErrorMessage(response, "Не удалось экспортировать CSV пользователей"));
+      }
+
+      return downloadCsvFromResponse(response, "users_export.csv");
+    },
+    onSuccess: (result) => {
+      const countText = result.exportedCount !== null ? ` (${result.exportedCount} строк)` : "";
+      setInfoMessage(`CSV пользователей выгружен${countText}`);
+      setErrorMessage("");
+    },
+    onError: (error: unknown) => {
+      setInfoMessage("");
+      setErrorMessage(error instanceof Error ? error.message : "Ошибка при экспорте CSV");
+    }
+  });
+
   const loadedUserIds = usersQuery.data?.items.map((item) => item.id) ?? [];
   const selectedLoadedIds = loadedUserIds.filter((id) => selectedUserIds.includes(id));
   const allSelectedLoaded = loadedUserIds.length > 0 && selectedLoadedIds.length === loadedUserIds.length;
+  const hasUserRows = loadedUserIds.length > 0;
 
   const activeFiltersCount = countActiveFilters([
     debouncedSearch.trim().length > 0,
@@ -573,7 +612,7 @@ export const AdminUsersManager = (): JSX.Element => {
       <h2 className="text-2xl font-semibold">Пользователи</h2>
 
       <div className="rounded-xl border bg-card p-4">
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-6">
           <input
             className="rounded-md border bg-background px-3 py-2 text-sm"
             placeholder="Поиск по email"
@@ -607,6 +646,15 @@ export const AdminUsersManager = (): JSX.Element => {
             onClick={() => void copyFiltersLink()}
           >
             {copyLinkState === "copied" ? "Ссылка скопирована" : copyLinkState === "error" ? "Ошибка копирования" : "Скопировать ссылку"}
+          </button>
+
+          <button
+            type="button"
+            className="rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary disabled:opacity-50"
+            onClick={() => exportCsvMutation.mutate()}
+            disabled={exportCsvMutation.isPending}
+          >
+            {exportCsvMutation.isPending ? "Выгружаем CSV..." : "Экспорт CSV"}
           </button>
 
           <button
@@ -654,6 +702,14 @@ export const AdminUsersManager = (): JSX.Element => {
           onUpdate={() => updatePresetMutation.mutate()}
           onDelete={() => deletePresetMutation.mutate()}
         />
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span className="rounded-full border px-2 py-1">
+            Найдено пользователей: {usersQuery.data ? usersQuery.data.total : "—"}
+          </span>
+          <span className="rounded-full border px-2 py-1">Активных фильтров: {activeFiltersCount}</span>
+          <span className="rounded-full border px-2 py-1">Выбрано в bulk: {selectedUserIds.length}</span>
+        </div>
       </div>
 
       <div className="rounded-xl border bg-card p-4">
@@ -715,8 +771,23 @@ export const AdminUsersManager = (): JSX.Element => {
       {infoMessage ? <p className="text-sm text-primary">{infoMessage}</p> : null}
       {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
 
-      {usersQuery.isLoading ? <p className="text-sm text-muted-foreground">Загружаем пользователей...</p> : null}
-      {usersQuery.isError ? <p className="text-sm text-destructive">Не удалось загрузить пользователей.</p> : null}
+      {usersQuery.isLoading ? (
+        <AdminStateBlock
+          title="Загружаем пользователей"
+          description="Подготавливаем список пользователей по текущим фильтрам."
+        />
+      ) : null}
+      {usersQuery.isError ? (
+        <AdminStateBlock
+          title="Ошибка загрузки пользователей"
+          description="Не удалось получить пользователей. Повтори запрос."
+          actionLabel="Повторить"
+          onAction={() => {
+            void usersQuery.refetch();
+          }}
+          tone="error"
+        />
+      ) : null}
 
       {usersQuery.data ? (
         <>
@@ -729,6 +800,7 @@ export const AdminUsersManager = (): JSX.Element => {
                       type="checkbox"
                       checked={allSelectedLoaded}
                       onChange={toggleSelectLoaded}
+                      disabled={!hasUserRows}
                       aria-label="Выбрать всех пользователей на странице"
                     />
                   </th>
@@ -740,62 +812,70 @@ export const AdminUsersManager = (): JSX.Element => {
                 </tr>
               </thead>
               <tbody>
-                {usersQuery.data.items.map((user) => {
-                  const isSelf = meQuery.data?.id === user.id;
-                  return (
-                    <tr key={user.id} className="border-t">
-                      <td className="p-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedUserIds.includes(user.id)}
-                          onChange={() => toggleUserSelection(user.id)}
-                          disabled={isSelf}
-                          aria-label={`Выбрать пользователя ${user.email}`}
-                        />
-                      </td>
-                      <td className="p-3">
-                        {user.email}
-                        {isSelf ? <span className="ml-2 text-xs text-muted-foreground">(вы)</span> : null}
-                      </td>
-                      <td className="p-3">{user.role}</td>
-                      <td className="p-3">{user.isBlocked ? "Заблокирован" : "Активен"}</td>
-                      <td className="p-3">{formatDate(user.createdAt)}</td>
-                      <td className="p-3">
-                        <div className="flex flex-wrap gap-2">
-                          <button
-                            type="button"
-                            className="rounded-md border px-2 py-1 text-xs hover:border-primary hover:text-primary disabled:opacity-40"
-                            disabled={updateUserMutation.isPending || isSelf || user.role === "ADMIN"}
-                            onClick={() => updateUserMutation.mutate({ userId: user.id, patch: { role: "ADMIN" } })}
-                          >
-                            Сделать ADMIN
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-md border px-2 py-1 text-xs hover:border-primary hover:text-primary disabled:opacity-40"
-                            disabled={updateUserMutation.isPending || isSelf || user.role === "USER"}
-                            onClick={() => updateUserMutation.mutate({ userId: user.id, patch: { role: "USER" } })}
-                          >
-                            Сделать USER
-                          </button>
-                          <button
-                            type="button"
-                            className="rounded-md border px-2 py-1 text-xs hover:border-destructive hover:text-destructive disabled:opacity-40"
-                            disabled={updateUserMutation.isPending || isSelf}
-                            onClick={() =>
-                              updateUserMutation.mutate({
-                                userId: user.id,
-                                patch: { isBlocked: !user.isBlocked }
-                              })
-                            }
-                          >
-                            {user.isBlocked ? "Разблокировать" : "Заблокировать"}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {hasUserRows ? (
+                  usersQuery.data.items.map((user) => {
+                    const isSelf = meQuery.data?.id === user.id;
+                    return (
+                      <tr key={user.id} className="border-t">
+                        <td className="p-3">
+                          <input
+                            type="checkbox"
+                            checked={selectedUserIds.includes(user.id)}
+                            onChange={() => toggleUserSelection(user.id)}
+                            disabled={isSelf}
+                            aria-label={`Выбрать пользователя ${user.email}`}
+                          />
+                        </td>
+                        <td className="p-3">
+                          {user.email}
+                          {isSelf ? <span className="ml-2 text-xs text-muted-foreground">(вы)</span> : null}
+                        </td>
+                        <td className="p-3">{user.role}</td>
+                        <td className="p-3">{user.isBlocked ? "Заблокирован" : "Активен"}</td>
+                        <td className="p-3">{formatDate(user.createdAt)}</td>
+                        <td className="p-3">
+                          <div className="flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              className="rounded-md border px-2 py-1 text-xs hover:border-primary hover:text-primary disabled:opacity-40"
+                              disabled={updateUserMutation.isPending || isSelf || user.role === "ADMIN"}
+                              onClick={() => updateUserMutation.mutate({ userId: user.id, patch: { role: "ADMIN" } })}
+                            >
+                              Сделать ADMIN
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-md border px-2 py-1 text-xs hover:border-primary hover:text-primary disabled:opacity-40"
+                              disabled={updateUserMutation.isPending || isSelf || user.role === "USER"}
+                              onClick={() => updateUserMutation.mutate({ userId: user.id, patch: { role: "USER" } })}
+                            >
+                              Сделать USER
+                            </button>
+                            <button
+                              type="button"
+                              className="rounded-md border px-2 py-1 text-xs hover:border-destructive hover:text-destructive disabled:opacity-40"
+                              disabled={updateUserMutation.isPending || isSelf}
+                              onClick={() =>
+                                updateUserMutation.mutate({
+                                  userId: user.id,
+                                  patch: { isBlocked: !user.isBlocked }
+                                })
+                              }
+                            >
+                              {user.isBlocked ? "Разблокировать" : "Заблокировать"}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr className="border-t">
+                    <td className="p-6 text-sm text-muted-foreground" colSpan={6}>
+                      Пользователи по текущим фильтрам не найдены. Измени фильтры или сбрось их и попробуй снова.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

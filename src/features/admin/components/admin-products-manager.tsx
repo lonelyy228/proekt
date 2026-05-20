@@ -4,9 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ensureCsrfToken } from "@/lib/csrf-client";
+import { formatStoreMoney } from "@/lib/currency";
 import { useDebouncedValue } from "@/features/admin/hooks/use-debounced-value";
 import { countActiveFilters } from "@/features/admin/lib/admin-table-utils";
 import { AdminSavedViewsPanel } from "@/features/admin/components/admin-saved-views-panel";
+import { downloadCsvFromResponse } from "@/features/admin/lib/file-download";
+import { AdminStateBlock } from "@/features/admin/components/admin-state-block";
 
 type ProductStatus = "DRAFT" | "ACTIVE" | "ARCHIVED";
 type ProductSortBy = "newest" | "price_asc" | "price_desc" | "name_asc";
@@ -125,7 +128,11 @@ const parseTags = (value: string): string[] =>
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
 
-const formatUsdCents = (value: number): string => `$${(value / 100).toFixed(2)}`;
+const productStatusLabelMap: Record<ProductStatus, string> = {
+  DRAFT: "Черновик",
+  ACTIVE: "Активный",
+  ARCHIVED: "Архив"
+};
 
 const extractErrorMessage = async (response: Response, fallback: string): Promise<string> => {
   try {
@@ -695,9 +702,49 @@ export const AdminProductsManager = (): JSX.Element => {
     }
   };
 
+  const exportCsvMutation = useMutation({
+    mutationFn: async () => {
+      const params = new URLSearchParams({
+        limit: "1000",
+        sortBy
+      });
+      if (debouncedSearch.trim()) {
+        params.set("search", debouncedSearch.trim());
+      }
+      if (brand.trim()) {
+        params.set("brand", brand.trim());
+      }
+      if (categoryId) {
+        params.set("categoryId", categoryId);
+      }
+      if (status) {
+        params.set("status", status);
+      }
+
+      const response = await fetch(`/api/admin/products/export?${params.toString()}`, {
+        credentials: "include"
+      });
+      if (!response.ok) {
+        throw new Error(await extractErrorMessage(response, "Не удалось экспортировать CSV товаров"));
+      }
+
+      return downloadCsvFromResponse(response, "products_export.csv");
+    },
+    onSuccess: (result) => {
+      const countText = result.exportedCount !== null ? ` (${result.exportedCount} строк)` : "";
+      setInfoMessage(`CSV товаров выгружен${countText}`);
+      setErrorMessage("");
+    },
+    onError: (error: unknown) => {
+      setInfoMessage("");
+      setErrorMessage(error instanceof Error ? error.message : "Ошибка при экспорте CSV");
+    }
+  });
+
   const loadedProductIds = productsQuery.data?.items.map((item) => item.id) ?? [];
   const selectedLoadedIds = loadedProductIds.filter((id) => selectedProductIds.includes(id));
   const allSelectedLoaded = loadedProductIds.length > 0 && selectedLoadedIds.length === loadedProductIds.length;
+  const hasProductRows = loadedProductIds.length > 0;
 
   const activeFiltersCount = countActiveFilters([
     debouncedSearch.trim().length > 0,
@@ -736,7 +783,7 @@ export const AdminProductsManager = (): JSX.Element => {
       <h2 className="text-2xl font-semibold">Товары</h2>
 
       <div className="rounded-xl border bg-card p-4">
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-6">
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-7">
           <input
             className="rounded-md border bg-background px-3 py-2 text-sm"
             placeholder="Поиск по имени или slug"
@@ -770,9 +817,9 @@ export const AdminProductsManager = (): JSX.Element => {
             onChange={(event) => setStatus(event.target.value as "" | ProductStatus)}
           >
             <option value="">Все статусы</option>
-            <option value="DRAFT">DRAFT</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="ARCHIVED">ARCHIVED</option>
+            <option value="DRAFT">{productStatusLabelMap.DRAFT}</option>
+            <option value="ACTIVE">{productStatusLabelMap.ACTIVE}</option>
+            <option value="ARCHIVED">{productStatusLabelMap.ARCHIVED}</option>
           </select>
 
           <select
@@ -792,6 +839,15 @@ export const AdminProductsManager = (): JSX.Element => {
             onClick={() => void copyFiltersLink()}
           >
             {copyLinkState === "copied" ? "Ссылка скопирована" : copyLinkState === "error" ? "Ошибка копирования" : "Скопировать ссылку"}
+          </button>
+
+          <button
+            type="button"
+            className="rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary disabled:opacity-50"
+            disabled={exportCsvMutation.isPending}
+            onClick={() => exportCsvMutation.mutate()}
+          >
+            {exportCsvMutation.isPending ? "Выгружаем CSV..." : "Экспорт CSV"}
           </button>
         </div>
 
@@ -843,6 +899,14 @@ export const AdminProductsManager = (): JSX.Element => {
           onUpdate={() => updatePresetMutation.mutate()}
           onDelete={() => deletePresetMutation.mutate()}
         />
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span className="rounded-full border px-2 py-1">
+            Найдено товаров: {productsQuery.data ? productsQuery.data.total : "—"}
+          </span>
+          <span className="rounded-full border px-2 py-1">Активных фильтров: {activeFiltersCount}</span>
+          <span className="rounded-full border px-2 py-1">Выбрано в bulk: {selectedProductIds.length}</span>
+        </div>
       </div>
 
       <div className="rounded-xl border bg-card p-4">
@@ -894,7 +958,7 @@ export const AdminProductsManager = (): JSX.Element => {
             type="number"
             min={0}
             className="rounded-md border bg-background px-3 py-2 text-sm"
-            placeholder="Цена в центах"
+            placeholder="Базовая цена в центах (USD)"
             value={createForm.basePriceCents}
             onChange={(event) =>
               setCreateForm((prev) => ({
@@ -929,9 +993,9 @@ export const AdminProductsManager = (): JSX.Element => {
             value={bulkStatus}
             onChange={(event) => setBulkStatus(event.target.value as ProductStatus)}
           >
-            <option value="DRAFT">DRAFT</option>
-            <option value="ACTIVE">ACTIVE</option>
-            <option value="ARCHIVED">ARCHIVED</option>
+            <option value="DRAFT">{productStatusLabelMap.DRAFT}</option>
+            <option value="ACTIVE">{productStatusLabelMap.ACTIVE}</option>
+            <option value="ARCHIVED">{productStatusLabelMap.ARCHIVED}</option>
           </select>
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <input type="checkbox" checked={bulkDryRun} onChange={(event) => setBulkDryRun(event.target.checked)} />
@@ -972,8 +1036,23 @@ export const AdminProductsManager = (): JSX.Element => {
       {infoMessage ? <p className="text-sm text-primary">{infoMessage}</p> : null}
       {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
 
-      {productsQuery.isLoading ? <p className="text-sm text-muted-foreground">Загружаем товары...</p> : null}
-      {productsQuery.isError ? <p className="text-sm text-destructive">Не удалось загрузить товары.</p> : null}
+      {productsQuery.isLoading ? (
+        <AdminStateBlock
+          title="Загружаем товары"
+          description="Подготавливаем список товаров по текущим фильтрам."
+        />
+      ) : null}
+      {productsQuery.isError ? (
+        <AdminStateBlock
+          title="Ошибка загрузки товаров"
+          description="Не удалось получить товары. Повтори запрос."
+          actionLabel="Повторить"
+          onAction={() => {
+            void productsQuery.refetch();
+          }}
+          tone="error"
+        />
+      ) : null}
 
       {productsQuery.data ? (
         <>
@@ -986,6 +1065,7 @@ export const AdminProductsManager = (): JSX.Element => {
                       type="checkbox"
                       checked={allSelectedLoaded}
                       onChange={toggleSelectLoaded}
+                      disabled={!hasProductRows}
                       aria-label="Выбрать все товары на странице"
                     />
                   </th>
@@ -998,191 +1078,199 @@ export const AdminProductsManager = (): JSX.Element => {
                 </tr>
               </thead>
               <tbody>
-                {productsQuery.data.items.map((item) => {
-                  const isEditing = editProductId === item.id && editForm !== null;
-                  return (
-                    <tr key={item.id} className="border-t align-top">
-                      <td className="p-3">
-                        <input
-                          type="checkbox"
-                          checked={selectedProductIds.includes(item.id)}
-                          onChange={() => toggleProductSelection(item.id)}
-                          aria-label={`Выбрать товар ${item.name}`}
-                        />
-                      </td>
-                      <td className="p-3">
-                        {isEditing ? (
-                          <div className="space-y-2">
-                            <input
-                              className="w-full rounded-md border bg-background px-2 py-1"
-                              value={editForm.name}
-                              onChange={(event) =>
-                                setEditForm((prev) => (prev ? { ...prev, name: event.target.value } : prev))
-                              }
-                            />
-                            <input
-                              className="w-full rounded-md border bg-background px-2 py-1"
-                              value={editForm.slug}
-                              onChange={(event) =>
-                                setEditForm((prev) => (prev ? { ...prev, slug: event.target.value } : prev))
-                              }
-                            />
-                            <textarea
-                              className="w-full rounded-md border bg-background px-2 py-1"
-                              rows={3}
-                              value={editForm.description}
-                              onChange={(event) =>
-                                setEditForm((prev) => (prev ? { ...prev, description: event.target.value } : prev))
-                              }
-                            />
-                            <input
-                              className="w-full rounded-md border bg-background px-2 py-1"
-                              value={editForm.shortDescription}
-                              onChange={(event) =>
-                                setEditForm((prev) => (prev ? { ...prev, shortDescription: event.target.value } : prev))
-                              }
-                              placeholder="Короткое описание"
-                            />
-                            <input
-                              className="w-full rounded-md border bg-background px-2 py-1"
-                              value={editForm.tagsText}
-                              onChange={(event) =>
-                                setEditForm((prev) => (prev ? { ...prev, tagsText: event.target.value } : prev))
-                              }
-                              placeholder="Теги через запятую"
-                            />
-                          </div>
-                        ) : (
-                          <div>
-                            <p className="font-medium">{item.name}</p>
-                            <p className="text-xs text-muted-foreground">/{item.slug}</p>
-                          </div>
-                        )}
-                      </td>
-                      <td className="p-3">
-                        {isEditing ? (
+                {hasProductRows ? (
+                  productsQuery.data.items.map((item) => {
+                    const isEditing = editProductId === item.id && editForm !== null;
+                    return (
+                      <tr key={item.id} className="border-t align-top">
+                        <td className="p-3">
                           <input
-                            className="w-full rounded-md border bg-background px-2 py-1"
-                            value={editForm.brand}
-                            onChange={(event) =>
-                              setEditForm((prev) => (prev ? { ...prev, brand: event.target.value } : prev))
-                            }
+                            type="checkbox"
+                            checked={selectedProductIds.includes(item.id)}
+                            onChange={() => toggleProductSelection(item.id)}
+                            aria-label={`Выбрать товар ${item.name}`}
                           />
-                        ) : (
-                          item.brand
-                        )}
-                      </td>
-                      <td className="p-3">
-                        {isEditing ? (
-                          <select
-                            className="w-full rounded-md border bg-background px-2 py-1"
-                            value={editForm.categoryId}
-                            onChange={(event) =>
-                              setEditForm((prev) => (prev ? { ...prev, categoryId: event.target.value } : prev))
-                            }
-                          >
-                            {(categoriesQuery.data ?? []).map((category) => (
-                              <option key={category.id} value={category.id}>
-                                {category.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          item.category.name
-                        )}
-                      </td>
-                      <td className="p-3">
-                        {isEditing ? (
-                          <select
-                            className="w-full rounded-md border bg-background px-2 py-1"
-                            value={editForm.status}
-                            onChange={(event) =>
-                              setEditForm((prev) => (prev ? { ...prev, status: event.target.value as ProductStatus } : prev))
-                            }
-                          >
-                            <option value="DRAFT">DRAFT</option>
-                            <option value="ACTIVE">ACTIVE</option>
-                            <option value="ARCHIVED">ARCHIVED</option>
-                          </select>
-                        ) : (
-                          item.status
-                        )}
-                      </td>
-                      <td className="p-3">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            min={0}
-                            className="w-28 rounded-md border bg-background px-2 py-1"
-                            value={editForm.basePriceCents}
-                            onChange={(event) =>
-                              setEditForm((prev) =>
-                                prev
-                                  ? {
-                                      ...prev,
-                                      basePriceCents: Math.max(0, Number(event.target.value) || 0)
-                                    }
-                                  : prev
-                              )
-                            }
-                          />
-                        ) : (
-                          formatUsdCents(item.basePriceCents)
-                        )}
-                      </td>
-                      <td className="p-3">
-                        {isEditing ? (
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              className="rounded-md border px-2 py-1 text-xs hover:border-primary hover:text-primary disabled:opacity-40"
-                              disabled={updateMutation.isPending}
-                              onClick={() => {
-                                if (!editProductId || !editForm) {
-                                  return;
+                        </td>
+                        <td className="p-3">
+                          {isEditing ? (
+                            <div className="space-y-2">
+                              <input
+                                className="w-full rounded-md border bg-background px-2 py-1"
+                                value={editForm.name}
+                                onChange={(event) =>
+                                  setEditForm((prev) => (prev ? { ...prev, name: event.target.value } : prev))
                                 }
-                                updateMutation.mutate({ productId: editProductId, form: editForm });
-                              }}
+                              />
+                              <input
+                                className="w-full rounded-md border bg-background px-2 py-1"
+                                value={editForm.slug}
+                                onChange={(event) =>
+                                  setEditForm((prev) => (prev ? { ...prev, slug: event.target.value } : prev))
+                                }
+                              />
+                              <textarea
+                                className="w-full rounded-md border bg-background px-2 py-1"
+                                rows={3}
+                                value={editForm.description}
+                                onChange={(event) =>
+                                  setEditForm((prev) => (prev ? { ...prev, description: event.target.value } : prev))
+                                }
+                              />
+                              <input
+                                className="w-full rounded-md border bg-background px-2 py-1"
+                                value={editForm.shortDescription}
+                                onChange={(event) =>
+                                  setEditForm((prev) => (prev ? { ...prev, shortDescription: event.target.value } : prev))
+                                }
+                                placeholder="Короткое описание"
+                              />
+                              <input
+                                className="w-full rounded-md border bg-background px-2 py-1"
+                                value={editForm.tagsText}
+                                onChange={(event) =>
+                                  setEditForm((prev) => (prev ? { ...prev, tagsText: event.target.value } : prev))
+                                }
+                                placeholder="Теги через запятую"
+                              />
+                            </div>
+                          ) : (
+                            <div>
+                              <p className="font-medium">{item.name}</p>
+                              <p className="text-xs text-muted-foreground">/{item.slug}</p>
+                            </div>
+                          )}
+                        </td>
+                        <td className="p-3">
+                          {isEditing ? (
+                            <input
+                              className="w-full rounded-md border bg-background px-2 py-1"
+                              value={editForm.brand}
+                              onChange={(event) =>
+                                setEditForm((prev) => (prev ? { ...prev, brand: event.target.value } : prev))
+                              }
+                            />
+                          ) : (
+                            item.brand
+                          )}
+                        </td>
+                        <td className="p-3">
+                          {isEditing ? (
+                            <select
+                              className="w-full rounded-md border bg-background px-2 py-1"
+                              value={editForm.categoryId}
+                              onChange={(event) =>
+                                setEditForm((prev) => (prev ? { ...prev, categoryId: event.target.value } : prev))
+                              }
                             >
-                              Сохранить
-                            </button>
-                            <button
-                              type="button"
-                              className="rounded-md border px-2 py-1 text-xs"
-                              onClick={() => {
-                                setEditProductId(null);
-                                setEditForm(null);
-                              }}
+                              {(categoriesQuery.data ?? []).map((category) => (
+                                <option key={category.id} value={category.id}>
+                                  {category.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            item.category.name
+                          )}
+                        </td>
+                        <td className="p-3">
+                          {isEditing ? (
+                            <select
+                              className="w-full rounded-md border bg-background px-2 py-1"
+                              value={editForm.status}
+                              onChange={(event) =>
+                                setEditForm((prev) => (prev ? { ...prev, status: event.target.value as ProductStatus } : prev))
+                              }
                             >
-                              Отмена
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex flex-wrap gap-2">
-                            <button
-                              type="button"
-                              className="rounded-md border px-2 py-1 text-xs hover:border-primary hover:text-primary"
-                              onClick={() => {
-                                setEditProductId(item.id);
-                                setEditForm(buildFormFromProduct(item));
-                              }}
-                            >
-                              Редактировать
-                            </button>
-                            <button
-                              type="button"
-                              className="rounded-md border px-2 py-1 text-xs hover:border-destructive hover:text-destructive disabled:opacity-40"
-                              disabled={deleteMutation.isPending}
-                              onClick={() => deleteMutation.mutate(item.id)}
-                            >
-                              Удалить
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
+                              <option value="DRAFT">{productStatusLabelMap.DRAFT}</option>
+                              <option value="ACTIVE">{productStatusLabelMap.ACTIVE}</option>
+                              <option value="ARCHIVED">{productStatusLabelMap.ARCHIVED}</option>
+                            </select>
+                          ) : (
+                            productStatusLabelMap[item.status]
+                          )}
+                        </td>
+                        <td className="p-3">
+                          {isEditing ? (
+                            <input
+                              type="number"
+                              min={0}
+                              className="w-28 rounded-md border bg-background px-2 py-1"
+                              value={editForm.basePriceCents}
+                              onChange={(event) =>
+                                setEditForm((prev) =>
+                                  prev
+                                    ? {
+                                        ...prev,
+                                        basePriceCents: Math.max(0, Number(event.target.value) || 0)
+                                      }
+                                    : prev
+                                )
+                              }
+                            />
+                          ) : (
+                            formatStoreMoney(item.basePriceCents, item.currency)
+                          )}
+                        </td>
+                        <td className="p-3">
+                          {isEditing ? (
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                className="rounded-md border px-2 py-1 text-xs hover:border-primary hover:text-primary disabled:opacity-40"
+                                disabled={updateMutation.isPending}
+                                onClick={() => {
+                                  if (!editProductId || !editForm) {
+                                    return;
+                                  }
+                                  updateMutation.mutate({ productId: editProductId, form: editForm });
+                                }}
+                              >
+                                Сохранить
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-md border px-2 py-1 text-xs"
+                                onClick={() => {
+                                  setEditProductId(null);
+                                  setEditForm(null);
+                                }}
+                              >
+                                Отмена
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex flex-wrap gap-2">
+                              <button
+                                type="button"
+                                className="rounded-md border px-2 py-1 text-xs hover:border-primary hover:text-primary"
+                                onClick={() => {
+                                  setEditProductId(item.id);
+                                  setEditForm(buildFormFromProduct(item));
+                                }}
+                              >
+                                Редактировать
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-md border px-2 py-1 text-xs hover:border-destructive hover:text-destructive disabled:opacity-40"
+                                disabled={deleteMutation.isPending}
+                                onClick={() => deleteMutation.mutate(item.id)}
+                              >
+                                Удалить
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })
+                ) : (
+                  <tr className="border-t">
+                    <td className="p-6 text-sm text-muted-foreground" colSpan={7}>
+                      Товары по текущим фильтрам не найдены. Измени фильтры или сбрось их и попробуй снова.
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>

@@ -6,7 +6,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ensureCsrfToken } from "@/lib/csrf-client";
 import { useDebouncedValue } from "@/features/admin/hooks/use-debounced-value";
 import { countActiveFilters } from "@/features/admin/lib/admin-table-utils";
+import { downloadCsvFromResponse } from "@/features/admin/lib/file-download";
 import { AdminSavedViewsPanel } from "@/features/admin/components/admin-saved-views-panel";
+import { AdminStateBlock } from "@/features/admin/components/admin-state-block";
 
 type ContentStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED";
 
@@ -74,7 +76,17 @@ type ContentBulkApplyResult = {
 
 type ContentBulkResult = ContentBulkDryRunResult | ContentBulkApplyResult;
 
+type ContentQuickFilters = {
+  generatedAt: string;
+  counts: Record<ContentStatus, number> & { total: number };
+};
+
 const PAGE_SIZES = [10, 20, 50] as const;
+const contentStatusLabels: Record<ContentStatus, string> = {
+  DRAFT: "Черновик",
+  PUBLISHED: "Опубликовано",
+  ARCHIVED: "Архив"
+};
 
 const initialCreateForm: CreateFormState = {
   slug: "",
@@ -230,6 +242,26 @@ export const AdminContentManager = (): JSX.Element => {
       }
 
       const payload = (await response.json()) as { success: boolean; data: AdminContentFilterPreset[] };
+      return payload.data;
+    }
+  });
+
+  const quickFiltersQuery = useQuery({
+    queryKey: ["admin-content-quick-filters", debouncedSearch],
+    queryFn: async (): Promise<ContentQuickFilters> => {
+      const params = new URLSearchParams();
+      if (debouncedSearch.trim()) {
+        params.set("search", debouncedSearch.trim());
+      }
+
+      const response = await fetch(`/api/admin/content/quick-filters?${params.toString()}`, {
+        credentials: "include"
+      });
+      if (!response.ok) {
+        throw new Error("Не удалось загрузить быстрые фильтры контента");
+      }
+
+      const payload = (await response.json()) as { success: boolean; data: ContentQuickFilters };
       return payload.data;
     }
   });
@@ -512,6 +544,40 @@ export const AdminContentManager = (): JSX.Element => {
     }
   });
 
+  const exportCsvMutation = useMutation({
+    mutationFn: async () => {
+      const params = new URLSearchParams({
+        limit: "1000"
+      });
+
+      if (debouncedSearch.trim()) {
+        params.set("search", debouncedSearch.trim());
+      }
+      if (statusFilter) {
+        params.set("status", statusFilter);
+      }
+
+      const response = await fetch(`/api/admin/content/export?${params.toString()}`, {
+        credentials: "include"
+      });
+
+      if (!response.ok) {
+        throw new Error(await extractErrorMessage(response, "Не удалось экспортировать CSV контента"));
+      }
+
+      return downloadCsvFromResponse(response, "content_export.csv");
+    },
+    onSuccess: (result) => {
+      const countText = result.exportedCount !== null ? ` (${result.exportedCount} строк)` : "";
+      setInfoMessage(`CSV контента выгружен${countText}`);
+      setErrorMessage("");
+    },
+    onError: (error: unknown) => {
+      setInfoMessage("");
+      setErrorMessage(error instanceof Error ? error.message : "Ошибка при экспорте CSV");
+    }
+  });
+
   const copyFiltersLink = async (): Promise<void> => {
     try {
       const href = `${window.location.origin}${pathname}${window.location.search}`;
@@ -555,19 +621,20 @@ export const AdminContentManager = (): JSX.Element => {
     setSelectedPostIds((current) => Array.from(new Set([...current, ...loadedPostIds])));
   };
 
-  const statusCounts = useMemo(() => {
-    const counts: Record<ContentStatus, number> = {
-      DRAFT: 0,
-      PUBLISHED: 0,
-      ARCHIVED: 0
-    };
+  const selectLoadedByStatus = (status: ContentStatus): void => {
+    const idsByStatus = (postsQuery.data?.items ?? [])
+      .filter((post) => post.status === status)
+      .map((post) => post.id);
 
-    for (const item of postsQuery.data?.items ?? []) {
-      counts[item.status] += 1;
-    }
+    setSelectedPostIds((current) => Array.from(new Set([...current, ...idsByStatus])));
+  };
 
-    return counts;
-  }, [postsQuery.data?.items]);
+  const statusCounts = quickFiltersQuery.data?.counts ?? {
+    DRAFT: 0,
+    PUBLISHED: 0,
+    ARCHIVED: 0,
+    total: 0
+  };
 
   const canCreatePost =
     createForm.slug.trim().length > 1 &&
@@ -598,9 +665,9 @@ export const AdminContentManager = (): JSX.Element => {
             value={createForm.status}
             onChange={(event) => setCreateForm((prev) => ({ ...prev, status: event.target.value as ContentStatus }))}
           >
-            <option value="DRAFT">DRAFT</option>
-            <option value="PUBLISHED">PUBLISHED</option>
-            <option value="ARCHIVED">ARCHIVED</option>
+            <option value="DRAFT">{contentStatusLabels.DRAFT}</option>
+            <option value="PUBLISHED">{contentStatusLabels.PUBLISHED}</option>
+            <option value="ARCHIVED">{contentStatusLabels.ARCHIVED}</option>
           </select>
           <div />
           <textarea
@@ -623,7 +690,7 @@ export const AdminContentManager = (): JSX.Element => {
       </div>
 
       <div className="sticky top-0 z-20 rounded-xl border bg-background/95 p-3 backdrop-blur">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
           <input
             className="rounded-md border bg-background px-3 py-2 text-sm"
             placeholder="Поиск по заголовку и slug"
@@ -639,9 +706,9 @@ export const AdminContentManager = (): JSX.Element => {
             }}
           >
             <option value="">Все статусы</option>
-            <option value="DRAFT">DRAFT</option>
-            <option value="PUBLISHED">PUBLISHED</option>
-            <option value="ARCHIVED">ARCHIVED</option>
+            <option value="DRAFT">{contentStatusLabels.DRAFT}</option>
+            <option value="PUBLISHED">{contentStatusLabels.PUBLISHED}</option>
+            <option value="ARCHIVED">{contentStatusLabels.ARCHIVED}</option>
           </select>
           <select
             className="rounded-md border bg-background px-3 py-2 text-sm"
@@ -669,6 +736,14 @@ export const AdminContentManager = (): JSX.Element => {
               : copyLinkState === "error"
                 ? "Ошибка копирования"
                 : "Скопировать ссылку"}
+          </button>
+          <button
+            type="button"
+            className="rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary disabled:opacity-50"
+            disabled={exportCsvMutation.isPending}
+            onClick={() => exportCsvMutation.mutate()}
+          >
+            {exportCsvMutation.isPending ? "Выгружаем CSV..." : "Экспорт CSV"}
           </button>
           <button
             type="button"
@@ -702,10 +777,21 @@ export const AdminContentManager = (): JSX.Element => {
                 setPage(1);
               }}
             >
-              {status}: {statusCounts[status]}
+              {contentStatusLabels[status]}: {statusCounts[status]}
             </button>
           ))}
         </div>
+        {quickFiltersQuery.data ? (
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            Сводка по найденным публикациям: {statusCounts.total} (обновлено {formatDate(quickFiltersQuery.data.generatedAt)})
+          </p>
+        ) : null}
+        {quickFiltersQuery.isLoading ? (
+          <p className="mt-2 text-[11px] text-muted-foreground">Загружаем агрегированные счетчики статусов...</p>
+        ) : null}
+        {quickFiltersQuery.isError ? (
+          <p className="mt-2 text-[11px] text-destructive">Не удалось загрузить агрегированные счетчики статусов.</p>
+        ) : null}
 
         <AdminSavedViewsPanel
           presets={presetsQuery.data ?? []}
@@ -735,6 +821,14 @@ export const AdminContentManager = (): JSX.Element => {
           loadingText="Загружаем представления контента..."
           errorText="Не удалось загрузить представления контента."
         />
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span className="rounded-full border px-2 py-1">
+            Найдено публикаций: {postsQuery.data ? postsQuery.data.total : "—"}
+          </span>
+          <span className="rounded-full border px-2 py-1">Активных фильтров: {activeFiltersCount}</span>
+          <span className="rounded-full border px-2 py-1">Выбрано в bulk: {selectedPostIds.length}</span>
+        </div>
       </div>
 
       <div className="rounded-xl border bg-card p-4">
@@ -745,9 +839,9 @@ export const AdminContentManager = (): JSX.Element => {
             value={bulkStatus}
             onChange={(event) => setBulkStatus(event.target.value as ContentStatus)}
           >
-            <option value="DRAFT">DRAFT</option>
-            <option value="PUBLISHED">PUBLISHED</option>
-            <option value="ARCHIVED">ARCHIVED</option>
+            <option value="DRAFT">{contentStatusLabels.DRAFT}</option>
+            <option value="PUBLISHED">{contentStatusLabels.PUBLISHED}</option>
+            <option value="ARCHIVED">{contentStatusLabels.ARCHIVED}</option>
           </select>
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <input type="checkbox" checked={bulkDryRun} onChange={(event) => setBulkDryRun(event.target.checked)} />
@@ -762,6 +856,38 @@ export const AdminContentManager = (): JSX.Element => {
             Выполнить
           </button>
           <span className="text-xs text-muted-foreground">Выбрано публикаций: {selectedPostIds.length}</span>
+          <button
+            type="button"
+            className="rounded-md border px-2 py-1 text-xs hover:border-primary hover:text-primary"
+            onClick={toggleSelectLoaded}
+            disabled={loadedPostIds.length === 0}
+          >
+            {allLoadedSelected ? "Снять страницу" : "Выбрать страницу"}
+          </button>
+          <button
+            type="button"
+            className="rounded-md border px-2 py-1 text-xs hover:border-primary hover:text-primary"
+            onClick={() => selectLoadedByStatus("DRAFT")}
+            disabled={postsQuery.data?.items.length === 0}
+          >
+            + Черновики
+          </button>
+          <button
+            type="button"
+            className="rounded-md border px-2 py-1 text-xs hover:border-primary hover:text-primary"
+            onClick={() => selectLoadedByStatus("PUBLISHED")}
+            disabled={postsQuery.data?.items.length === 0}
+          >
+            + Публик.
+          </button>
+          <button
+            type="button"
+            className="rounded-md border px-2 py-1 text-xs hover:border-primary hover:text-primary"
+            onClick={() => setSelectedPostIds([])}
+            disabled={selectedPostIds.length === 0}
+          >
+            Очистить выбор
+          </button>
         </div>
 
         {bulkResult ? (
@@ -789,8 +915,23 @@ export const AdminContentManager = (): JSX.Element => {
       {infoMessage ? <p className="text-sm text-primary">{infoMessage}</p> : null}
       {errorMessage ? <p className="text-sm text-destructive">{errorMessage}</p> : null}
 
-      {postsQuery.isLoading ? <p className="text-sm text-muted-foreground">Загружаем публикации...</p> : null}
-      {postsQuery.isError ? <p className="text-sm text-destructive">Не удалось загрузить публикации.</p> : null}
+      {postsQuery.isLoading ? (
+        <AdminStateBlock
+          title="Загружаем публикации"
+          description="Подготавливаем список публикаций по текущим фильтрам."
+        />
+      ) : null}
+      {postsQuery.isError ? (
+        <AdminStateBlock
+          title="Ошибка загрузки публикаций"
+          description="Не удалось получить список публикаций. Проверь соединение и попробуй снова."
+          actionLabel="Повторить"
+          onAction={() => {
+            void postsQuery.refetch();
+          }}
+          tone="error"
+        />
+      ) : null}
 
       {postsQuery.data ? (
         <>
@@ -841,9 +982,9 @@ export const AdminContentManager = (): JSX.Element => {
                           })
                         }
                       >
-                        <option value="DRAFT">DRAFT</option>
-                        <option value="PUBLISHED">PUBLISHED</option>
-                        <option value="ARCHIVED">ARCHIVED</option>
+                        <option value="DRAFT">{contentStatusLabels.DRAFT}</option>
+                        <option value="PUBLISHED">{contentStatusLabels.PUBLISHED}</option>
+                        <option value="ARCHIVED">{contentStatusLabels.ARCHIVED}</option>
                       </select>
                     </td>
                     <td className="p-3">{formatDate(post.updatedAt)}</td>
@@ -852,6 +993,19 @@ export const AdminContentManager = (): JSX.Element => {
               </tbody>
             </table>
           </div>
+          {postsQuery.data.items.length === 0 ? (
+            <AdminStateBlock
+              title="Публикации не найдены"
+              description="По текущим фильтрам нет результатов. Сбрось фильтры или поменяй статус."
+              actionLabel="Сбросить фильтры"
+              onAction={() => {
+                setPage(1);
+                setPageSize(20);
+                setSearchInput("");
+                setStatusFilter("");
+              }}
+            />
+          ) : null}
 
           <div className="flex items-center justify-between text-sm">
             <p className="text-muted-foreground">
@@ -877,6 +1031,38 @@ export const AdminContentManager = (): JSX.Element => {
             </div>
           </div>
         </>
+      ) : null}
+
+      {selectedPostIds.length > 0 ? (
+        <div className="sticky bottom-3 z-20 rounded-xl border bg-background/95 p-3 shadow-sm backdrop-blur">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">Выбрано публикаций: {selectedPostIds.length}</p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="rounded-md border px-3 py-1 text-sm hover:border-primary hover:text-primary disabled:opacity-50"
+                onClick={() => setBulkDryRun(true)}
+              >
+                Режим: Проверка
+              </button>
+              <button
+                type="button"
+                className="rounded-md border px-3 py-1 text-sm hover:border-primary hover:text-primary disabled:opacity-50"
+                onClick={() => setBulkDryRun(false)}
+              >
+                Режим: Применение
+              </button>
+              <button
+                type="button"
+                className="rounded-md border px-3 py-1 text-sm hover:border-primary hover:text-primary disabled:opacity-50"
+                onClick={() => bulkStatusMutation.mutate()}
+                disabled={bulkStatusMutation.isPending}
+              >
+                {bulkStatusMutation.isPending ? "Выполняем..." : "Запустить bulk"}
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </section>
   );

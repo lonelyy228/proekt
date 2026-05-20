@@ -6,7 +6,15 @@ const f = createUploadthing();
 
 export const uploadRouter = {
   designAssetUploader: f({
-    image: {
+    "image/png": {
+      maxFileSize: "8MB",
+      maxFileCount: 5
+    },
+    "image/jpeg": {
+      maxFileSize: "8MB",
+      maxFileCount: 5
+    },
+    "image/webp": {
       maxFileSize: "8MB",
       maxFileCount: 5
     }
@@ -20,7 +28,7 @@ export const uploadRouter = {
 
       return {
         uploadedBy: metadata.userId,
-        fileUrl: file.url,
+        fileUrl: file.ufsUrl,
         mimeType: file.type,
         size: file.size
       };

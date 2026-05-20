@@ -18,6 +18,9 @@ export default function HomePage(): JSX.Element {
             <Link href="/catalog" className="rounded-md bg-primary px-4 py-2 text-primary-foreground">
               Перейти в каталог
             </Link>
+            <Link href="/catalog/basics" className="rounded-md border px-4 py-2">
+              RSH Basics
+            </Link>
             <Link href="/editor" className="rounded-md border px-4 py-2">
               Открыть 2D Lab
             </Link>

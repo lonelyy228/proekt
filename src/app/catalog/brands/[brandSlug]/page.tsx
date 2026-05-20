@@ -2,6 +2,7 @@
 import { brandFromSlug } from "@/features/catalog/brand-directory";
 import { parseCatalogPageState, toCatalogServiceParams } from "@/features/catalog/lib/catalog-query";
 import { productService } from "@/server/services/product-service";
+import { isCustomizerBaseBrand } from "@/config/customizer";
 
 export const dynamic = "force-dynamic";
 
@@ -14,10 +15,14 @@ export default async function BrandCatalogPage({
 }): Promise<JSX.Element> {
   const brand = brandFromSlug(params.brandSlug);
   const state = parseCatalogPageState(searchParams, brand);
+  const scope = isCustomizerBaseBrand(brand) ? "BASICS" : "BRANDED";
 
   const [catalog, categories] = await Promise.all([
-    productService.listCatalog(toCatalogServiceParams(state)),
-    productService.listCategories()
+    productService.listCatalog({
+      ...toCatalogServiceParams(state),
+      scope
+    }),
+    productService.listCategories(scope)
   ]);
 
   return (

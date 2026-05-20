@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { FormEvent, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ensureCsrfToken } from "@/lib/csrf-client";
 import { formatStoreMoney } from "@/lib/currency";
@@ -53,6 +53,7 @@ export default function CheckoutPage(): JSX.Element {
   const [postalCode, setPostalCode] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const checkoutIdempotencyKeyRef = useRef<string>("");
 
   const shippingCents = useMemo(() => {
     const subtotal = cart?.subtotalCents ?? 0;
@@ -79,12 +80,16 @@ export default function CheckoutPage(): JSX.Element {
     try {
       const csrfToken = await ensureCsrfToken();
       const origin = window.location.origin;
+      if (!checkoutIdempotencyKeyRef.current) {
+        checkoutIdempotencyKeyRef.current = window.crypto.randomUUID();
+      }
 
       const response = await fetch("/api/checkout/session", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-csrf-token": csrfToken
+          "x-csrf-token": csrfToken,
+          "x-idempotency-key": checkoutIdempotencyKeyRef.current
         },
         credentials: "include",
         body: JSON.stringify({
