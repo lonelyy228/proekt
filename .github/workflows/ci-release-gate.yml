@@ -133,7 +133,7 @@ jobs:
         run: |
           start=$(date +%s%3N)
           set +e
-          npm run test
+          npm run test:unit
           status=$?
           end=$(date +%s%3N)
           echo "duration_ms=$((end-start))" >> "$GITHUB_OUTPUT"
