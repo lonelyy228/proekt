@@ -17,6 +17,7 @@ if (!repoInput || !repoInput.includes("/")) {
 
 const [owner, repo] = repoInput.split("/");
 const dryRun = process.env.DRY_RUN === "1";
+const strictBranches = process.env.STRICT_BRANCHES === "1";
 const branches = (process.env.BRANCHES ?? DEFAULT_BRANCHES.join(","))
   .split(",")
   .map((value) => value.trim())
@@ -72,7 +73,17 @@ function toReviewConfig(current) {
 }
 
 async function updateBranchProtection(branch) {
-  await githubRequest(`/repos/${owner}/${repo}/branches/${branch}`);
+  try {
+    await githubRequest(`/repos/${owner}/${repo}/branches/${branch}`);
+  } catch (error) {
+    const status = parseGithubApiError(error);
+    if (status === 404 && !strictBranches) {
+      console.log(`Skip ${owner}/${repo}:${branch} (branch not found).`);
+      return;
+    }
+
+    throw error;
+  }
 
   let current = null;
   try {
@@ -128,6 +139,7 @@ async function main() {
   console.log(`Repository: ${owner}/${repo}`);
   console.log(`Branches: ${branches.join(", ")}`);
   console.log(`Required checks: ${REQUIRED_CONTEXTS.join(", ")}`);
+  console.log(`Strict branch mode: ${strictBranches ? "enabled" : "disabled"}`);
 
   for (const branch of branches) {
     await updateBranchProtection(branch);

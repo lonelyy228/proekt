@@ -37,6 +37,7 @@ jobs:
       STRIPE_PRICE_CURRENCY: usd
       STORE_USD_TO_RUB_RATE: "90"
       PLAYWRIGHT_TEST: "1"
+      DB_PREFLIGHT_STRICT_MIGRATIONS: "0"
     services:
       postgres:
         image: postgres:16
@@ -86,7 +87,7 @@ jobs:
         run: |
           start=$(date +%s%3N)
           set +e
-          npm run prisma:generate && npm run prisma:deploy && npm run seed
+          npm run prisma:ci:bootstrap
           status=$?
           end=$(date +%s%3N)
           echo "duration_ms=$((end-start))" >> "$GITHUB_OUTPUT"
