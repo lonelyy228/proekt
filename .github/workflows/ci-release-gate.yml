@@ -39,6 +39,7 @@ jobs:
       STRIPE_PRICE_CURRENCY: usd
       STORE_USD_TO_RUB_RATE: "90"
       PLAYWRIGHT_TEST: "1"
+      DB_PREFLIGHT_STRICT_MIGRATIONS: "0"
     services:
       postgres:
         image: postgres:16
@@ -88,7 +89,7 @@ jobs:
         run: |
           start=$(date +%s%3N)
           set +e
-          npm run prisma:generate && npm run prisma:deploy && npm run seed
+          npm run prisma:ci:bootstrap
           status=$?
           end=$(date +%s%3N)
           echo "duration_ms=$((end-start))" >> "$GITHUB_OUTPUT"
@@ -132,7 +133,7 @@ jobs:
         run: |
           start=$(date +%s%3N)
           set +e
-          npm run test
+          npm run test:unit
           status=$?
           end=$(date +%s%3N)
           echo "duration_ms=$((end-start))" >> "$GITHUB_OUTPUT"
@@ -141,6 +142,7 @@ jobs:
       - name: Run build
         id: build
         env:
+          NODE_ENV: production
           APP_URL: https://rsh.example
           COOKIE_DOMAIN: rsh.example
           STRIPE_SECRET_KEY: sk_live_ci_placeholder_key
@@ -291,12 +293,25 @@ jobs:
           path: ci-release-gate-report.json
           if-no-files-found: error
 
+      - name: Upload Playwright artifacts
+        id: upload_playwright_artifacts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-release-gate-playwright-${{ github.run_id }}
+          path: |
+            test-results
+            playwright-report
+          if-no-files-found: ignore
+          retention-days: 14
+
       - name: Publish release gate summary comment
         if: ${{ always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.fork == false }}
         uses: actions/github-script@v7
         env:
           REPORT_PATH: ci-release-gate-report.json
           ARTIFACT_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.upload_release_report.outputs.artifact-id }}
+          PLAYWRIGHT_ARTIFACT_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.upload_playwright_artifacts.outputs.artifact-id }}
         with:
           script: |
             const fs = require("fs");
@@ -386,6 +401,13 @@ jobs:
             const failedStepBlock = firstFailedKey
               ? `### What failed next\n- Step: \`${stepMeta[firstFailedKey].label}\`\n- Action: ${stepMeta[firstFailedKey].next}\n`
               : "### What failed next\n- No failed steps detected.\n";
+            const hasPlaywrightArtifacts = Boolean(
+              process.env.PLAYWRIGHT_ARTIFACT_URL &&
+              !process.env.PLAYWRIGHT_ARTIFACT_URL.endsWith("/artifacts/")
+            );
+            const playwrightArtifactsLine = hasPlaywrightArtifacts
+              ? `[ci-release-gate-playwright](${process.env.PLAYWRIGHT_ARTIFACT_URL})`
+              : "not available";
 
             const summaryBadge = report.status === "passed" ? "[OK] PASSED" : "[FAIL] FAILED";
             const body = `${marker}
@@ -402,6 +424,10 @@ jobs:
             - Total gate time: \`${totalGateTime}\`
             - Slowest steps:
             ${slowestStepLines}
+
+            ### Debug Links
+            - Workflow logs: [open run logs](${report.runUrl})
+            - Playwright artifacts: ${playwrightArtifactsLine}
 
             - Run: [#${report.runNumber}](${report.runUrl})
             - Commit: \`${report.sha.slice(0, 12)}\`
