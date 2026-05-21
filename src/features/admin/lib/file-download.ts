@@ -21,9 +21,12 @@ export const buildSnapshotFileName = (prefix: string, extension: "json"): string
   return `${safePrefix}-${formatUtcStamp(new Date())}.${extension}`;
 };
 
-export const downloadJsonFile = (fileName: string, payload: unknown): void => {
-  const serialized = JSON.stringify(payload, null, 2);
-  const blob = new Blob([serialized], { type: "application/json;charset=utf-8" });
+export const buildExportFileName = (prefix: string, extension: "csv"): string => {
+  const safePrefix = sanitizeFileNamePart(prefix) || "export";
+  return `${safePrefix}-${formatUtcStamp(new Date())}.${extension}`;
+};
+
+const downloadBlob = (fileName: string, blob: Blob): void => {
   const objectUrl = URL.createObjectURL(blob);
 
   const link = document.createElement("a");
@@ -36,4 +39,15 @@ export const downloadJsonFile = (fileName: string, payload: unknown): void => {
   link.remove();
 
   URL.revokeObjectURL(objectUrl);
+};
+
+export const downloadJsonFile = (fileName: string, payload: unknown): void => {
+  const serialized = JSON.stringify(payload, null, 2);
+  const blob = new Blob([serialized], { type: "application/json;charset=utf-8" });
+  downloadBlob(fileName, blob);
+};
+
+export const downloadCsvFile = (fileName: string, csvText: string): void => {
+  const blob = new Blob([csvText], { type: "text/csv;charset=utf-8" });
+  downloadBlob(fileName, blob);
 };
