@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { AdminRuntimeCheckStatus, AdminRuntimeSnapshot } from "@/features/admin/types/admin-operations";
 import { AdminStateBlock } from "@/features/admin/components/admin-state-block";
+import { buildSnapshotFileName, downloadJsonFile } from "@/features/admin/lib/file-download";
 
 type SettingsTab = "runtime" | "security" | "operations";
 
@@ -163,6 +164,27 @@ export const AdminSettingsCenter = (): JSX.Element => {
     }
   };
 
+  const exportRuntimeSnapshot = (): void => {
+    if (!runtimeQuery.data) {
+      return;
+    }
+
+    try {
+      const payload = {
+        exportedAt: new Date().toISOString(),
+        sourceUrl: `${window.location.origin}${pathname}${window.location.search}`,
+        ...runtimeQuery.data
+      };
+
+      downloadJsonFile(buildSnapshotFileName("admin-runtime-snapshot", "json"), payload);
+      setInfoMessage("Runtime snapshot экспортирован в JSON");
+      setErrorMessage("");
+    } catch {
+      setInfoMessage("");
+      setErrorMessage("Не удалось экспортировать runtime snapshot");
+    }
+  };
+
   const checks = runtimeQuery.data?.checks ?? [];
   const sentrySampling = runtimeQuery.data?.sentrySampling;
   const securityControls = runtimeQuery.data?.securityControls ?? [];
@@ -215,6 +237,14 @@ export const AdminSettingsCenter = (): JSX.Element => {
               : copyObservabilityState === "error"
                 ? "Ошибка snapshot"
                 : "Copy observability snapshot"}
+          </button>
+          <button
+            type="button"
+            className="rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary disabled:opacity-50"
+            disabled={!runtimeQuery.data}
+            onClick={exportRuntimeSnapshot}
+          >
+            Экспорт JSON
           </button>
           <button
             type="button"
