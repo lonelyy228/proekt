@@ -37,7 +37,7 @@ export const CatalogScreen = ({
       <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{subtitle}</p>
     </div>
 
-    <CatalogBrandRail state={state} />
+    {!lockedBrand ? <CatalogBrandRail state={state} /> : null}
 
     <CatalogFilterPanel
       state={state}
