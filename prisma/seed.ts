@@ -4,6 +4,7 @@ import { hashSync } from "bcryptjs";
 type ProductSeed = {
   slug: string;
   brand: string;
+  categorySlug?: "rsh-brands" | "rsh-basics";
   name: string;
   description: string;
   shortDescription: string;
@@ -187,6 +188,57 @@ const productSeeds: ProductSeed[] = [
       size: "M",
       priceCents: 10900
     }
+  },
+  {
+    slug: "rsh-basics-oversized-tee-11",
+    brand: "RSH BASICS",
+    categorySlug: "rsh-basics",
+    name: "RSH Basics Oversized Tee",
+    description: "Базовая футболка RSH BASICS для кастомизации в 2D Lab.",
+    shortDescription: "База для кастомизации: футболка",
+    tags: ["basics", "customizable", "tee", "rsh-basics"],
+    basePriceCents: 3900,
+    variant: {
+      sku: "RSH-BSC-TEE-WHT-M",
+      name: "White / M",
+      color: "White",
+      size: "M",
+      priceCents: 3900
+    }
+  },
+  {
+    slug: "rsh-basics-hoodie-core-12",
+    brand: "RSH BASICS",
+    categorySlug: "rsh-basics",
+    name: "RSH Basics Hoodie Core",
+    description: "Плотное худи RSH BASICS, специально подготовленное для персонализации.",
+    shortDescription: "База для кастомизации: худи",
+    tags: ["basics", "customizable", "hoodie", "rsh-basics"],
+    basePriceCents: 5900,
+    variant: {
+      sku: "RSH-BSC-HOOD-BLK-L",
+      name: "Black / L",
+      color: "Black",
+      size: "L",
+      priceCents: 5900
+    }
+  },
+  {
+    slug: "rsh-basics-sweatshirt-studio-13",
+    brand: "RSH BASICS",
+    categorySlug: "rsh-basics",
+    name: "RSH Basics Sweatshirt Studio",
+    description: "Минималистичный свитшот RSH BASICS для создания уникальных принтов в 2D Lab.",
+    shortDescription: "База для кастомизации: свитшот",
+    tags: ["basics", "customizable", "sweatshirt", "rsh-basics"],
+    basePriceCents: 5200,
+    variant: {
+      sku: "RSH-BSC-SWT-GRY-M",
+      name: "Grey / M",
+      color: "Grey",
+      size: "M",
+      priceCents: 5200
+    }
   }
 ];
 
@@ -203,7 +255,7 @@ async function main(): Promise<void> {
     }
   });
 
-  const category = await prisma.category.upsert({
+  const brandsCategory = await prisma.category.upsert({
     where: { slug: "rsh-brands" },
     update: {
       name: "RSH Brands",
@@ -213,6 +265,19 @@ async function main(): Promise<void> {
       slug: "rsh-brands",
       name: "RSH Brands",
       description: "Популярные брендовые вещи и опциональная кастомизация"
+    }
+  });
+
+  const basicsCategory = await prisma.category.upsert({
+    where: { slug: "rsh-basics" },
+    update: {
+      name: "RSH Basics",
+      description: "Базовые позиции RSH для кастомизации в 2D Lab"
+    },
+    create: {
+      slug: "rsh-basics",
+      name: "RSH Basics",
+      description: "Базовые позиции RSH для кастомизации в 2D Lab"
     }
   });
 
@@ -234,7 +299,7 @@ async function main(): Promise<void> {
         shortDescription: seed.shortDescription,
         tags: seed.tags,
         status: ProductStatus.ACTIVE,
-        categoryId: category.id,
+        categoryId: seed.categorySlug === "rsh-basics" ? basicsCategory.id : brandsCategory.id,
         basePriceCents: seed.basePriceCents,
         currency: "USD"
       },
@@ -246,7 +311,7 @@ async function main(): Promise<void> {
         shortDescription: seed.shortDescription,
         tags: seed.tags,
         status: ProductStatus.ACTIVE,
-        categoryId: category.id,
+        categoryId: seed.categorySlug === "rsh-basics" ? basicsCategory.id : brandsCategory.id,
         basePriceCents: seed.basePriceCents,
         currency: "USD"
       }

@@ -1,5 +1,39 @@
 import { cartRepository } from "@/server/repositories/cart-repository";
+import { designRepository } from "@/server/repositories/design-repository";
+import { productRepository } from "@/server/repositories/product-repository";
+import { isCustomizerBaseBrand, CUSTOMIZER_BRAND_RESTRICTION_MESSAGE } from "@/config/customizer";
 import { AppError } from "@/server/utils/errors";
+
+const MAX_CART_ITEM_QUANTITY = 50;
+
+const validateCartItemReferences = async (userId: string, payload: { productId: string; variantId: string; customizationId?: string | null }) => {
+  const [product, variant] = await Promise.all([
+    productRepository.findById(payload.productId),
+    productRepository.findVariantById(payload.variantId)
+  ]);
+
+  if (!product) {
+    throw new AppError("NOT_FOUND", "Product not found");
+  }
+
+  if (!variant || variant.productId !== product.id) {
+    throw new AppError("VALIDATION_ERROR", "Variant does not belong to the selected product");
+  }
+
+  if (!payload.customizationId) {
+    return;
+  }
+
+  if (!isCustomizerBaseBrand(product.brand)) {
+    throw new AppError("FORBIDDEN", CUSTOMIZER_BRAND_RESTRICTION_MESSAGE);
+  }
+
+  const design = await designRepository.findById(payload.customizationId, userId);
+
+  if (!design) {
+    throw new AppError("NOT_FOUND", "Customization design not found");
+  }
+};
 
 export const cartService = {
   getCart: async (userId: string) => {
@@ -45,6 +79,12 @@ export const cartService = {
     if (payload.quantity <= 0) {
       throw new AppError("VALIDATION_ERROR", "Quantity must be greater than zero");
     }
+
+    if (payload.quantity > MAX_CART_ITEM_QUANTITY) {
+      throw new AppError("VALIDATION_ERROR", `Quantity cannot exceed ${MAX_CART_ITEM_QUANTITY}`);
+    }
+
+    await validateCartItemReferences(userId, payload);
 
     await cartRepository.upsertItem({
       cartId: cart.id,

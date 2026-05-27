@@ -62,6 +62,11 @@ export const productRepository = {
       }
     }),
 
+  findVariantById: (id: string) =>
+    prisma.productVariant.findUnique({
+      where: { id }
+    }),
+
   findBySlugAny: (slug: string) =>
     prisma.product.findUnique({
       where: { slug }

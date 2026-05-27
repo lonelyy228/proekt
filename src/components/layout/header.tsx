@@ -17,6 +17,9 @@ export const Header = (): JSX.Element => {
           <Link href="/catalog" className="hover:text-primary">
             Каталог
           </Link>
+          <Link href="/catalog/basics" className="hover:text-primary">
+            Basics
+          </Link>
           <Link href="/editor" className="hover:text-primary">
             2D Lab
           </Link>
