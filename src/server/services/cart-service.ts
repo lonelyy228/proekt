@@ -56,6 +56,7 @@ export const cartService = {
         variantId: item.variantId,
         quantity: item.quantity,
         customizationId: item.customizationId,
+        currency: item.variant.currency,
         unitPriceCents,
         totalPriceCents: item.quantity * unitPriceCents,
         productName: item.product.name,

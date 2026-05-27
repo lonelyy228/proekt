@@ -49,9 +49,7 @@ export const OrderStatusPoll = ({ orderId, initial }: { orderId: string; initial
       <p className="font-medium">Заказ №{formatOrderNumber(order.id)}</p>
       <p className="text-sm text-muted-foreground">Статус: {getOrderStatusLabel(order.status)}</p>
       <p className="text-sm">Сумма: {formatStoreMoney(order.totalCents, order.currency)}</p>
-      {!isTerminalStatus(order.status) ? (
-        <p className="mt-2 text-xs text-muted-foreground">Обновляем статус автоматически...</p>
-      ) : null}
+      {!isTerminalStatus(order.status) ? <p className="mt-2 text-xs text-muted-foreground">Обновляем статус автоматически...</p> : null}
       {query.isError ? <p className="mt-2 text-xs text-destructive">Не удалось обновить статус автоматически.</p> : null}
     </article>
   );
