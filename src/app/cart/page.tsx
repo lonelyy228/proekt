@@ -11,6 +11,7 @@ type CartPayload = {
     productName: string;
     variantName: string;
     quantity: number;
+    currency: string;
     totalPriceCents: number;
   }>;
   subtotalCents: number;
@@ -50,11 +51,11 @@ export default function CartPage(): JSX.Element {
             <p className="font-medium">{item.productName}</p>
             <p className="text-sm text-muted-foreground">{item.variantName}</p>
             <p className="text-sm">Количество: {item.quantity}</p>
-            <p className="text-sm font-semibold">{formatStoreMoney(item.totalPriceCents, "USD" )}</p>
+            <p className="text-sm font-semibold">{formatStoreMoney(item.totalPriceCents, item.currency)}</p>
           </article>
         ))}
       </div>
-      <p className="font-semibold">Итого: {formatStoreMoney(data.subtotalCents, "USD" )}</p>
+      <p className="font-semibold">Итого: {formatStoreMoney(data.subtotalCents, data.items[0]?.currency ?? "USD")}</p>
       {data.items.length > 0 ? (
         <Link href="/checkout" className="inline-flex rounded-md bg-primary px-4 py-2 text-primary-foreground">
           Оформить заказ

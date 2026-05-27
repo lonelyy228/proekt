@@ -12,6 +12,7 @@ type CartPayload = {
     productName: string;
     variantName: string;
     quantity: number;
+    currency: string;
     totalPriceCents: number;
   }>;
   subtotalCents: number;
@@ -225,16 +226,16 @@ export default function CheckoutPage(): JSX.Element {
               <p className="font-medium">{item.productName}</p>
               <p className="text-muted-foreground">{item.variantName}</p>
               <p className="text-muted-foreground">Количество: {item.quantity}</p>
-              <p className="font-medium">{formatStoreMoney(item.totalPriceCents, "USD" )}</p>
+              <p className="font-medium">{formatStoreMoney(item.totalPriceCents, item.currency)}</p>
             </article>
           ))}
         </div>
 
         <div className="space-y-1 border-t pt-3 text-sm">
-          <p>Товары: {formatStoreMoney(cart.subtotalCents, "USD" )}</p>
-          <p>Доставка: {formatStoreMoney(shippingCents, "USD" )}</p>
-          <p>Налог: {formatStoreMoney(taxCents, "USD" )}</p>
-          <p className="pt-1 text-base font-semibold">Итого: {formatStoreMoney(totalCents, "USD" )}</p>
+          <p>Товары: {formatStoreMoney(cart.subtotalCents, cart.items[0]?.currency ?? "USD")}</p>
+          <p>Доставка: {formatStoreMoney(shippingCents, cart.items[0]?.currency ?? "USD")}</p>
+          <p>Налог: {formatStoreMoney(taxCents, cart.items[0]?.currency ?? "USD")}</p>
+          <p className="pt-1 text-base font-semibold">Итого: {formatStoreMoney(totalCents, cart.items[0]?.currency ?? "USD")}</p>
         </div>
       </aside>
     </section>
