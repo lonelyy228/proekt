@@ -398,6 +398,71 @@ export const adminService = {
     };
   },
 
+  exportUsersCsv: async (
+    adminId: string,
+    params: {
+      search?: string;
+      role?: "USER" | "ADMIN";
+      isBlocked?: boolean;
+      limit: number;
+    }
+  ) => {
+    const headers = ["userId", "email", "role", "isBlocked", "createdAt", "updatedAt"];
+    const rows: string[][] = [];
+    const pageSize = Math.min(200, params.limit);
+    let skip = 0;
+    let exportedCount = 0;
+
+    while (exportedCount < params.limit) {
+      const chunk = await userRepository.listUsers({
+        skip,
+        take: Math.min(pageSize, params.limit - exportedCount),
+        search: params.search,
+        role: params.role,
+        isBlocked: params.isBlocked
+      });
+
+      if (chunk.length === 0) {
+        break;
+      }
+
+      rows.push(
+        ...chunk.map((item) => [
+          item.id,
+          item.email,
+          item.role,
+          String(item.isBlocked),
+          item.createdAt.toISOString(),
+          item.updatedAt.toISOString()
+        ])
+      );
+
+      exportedCount += chunk.length;
+      skip += chunk.length;
+    }
+
+    const csv = buildCsv(headers, rows);
+
+    await auditRepository.logAdminAction({
+      adminId,
+      action: "USER_EXPORT",
+      targetType: "USER",
+      targetId: "bulk",
+      details: {
+        search: params.search ?? null,
+        role: params.role ?? null,
+        isBlocked: params.isBlocked ?? null,
+        limit: params.limit,
+        exportedCount
+      }
+    });
+
+    return {
+      csv,
+      exportedCount
+    };
+  },
+
   updateUserAccess: async (
     adminId: string,
     targetUserId: string,
@@ -901,6 +966,93 @@ export const adminService = {
     status?: ProductStatus;
     sortBy: "newest" | "price_asc" | "price_desc" | "name_asc";
   }) => productService.listAdminProducts(params),
+
+  exportProductsCsv: async (
+    adminId: string,
+    params: {
+      search?: string;
+      brand?: string;
+      categoryId?: string;
+      status?: ProductStatus;
+      sortBy: "newest" | "price_asc" | "price_desc" | "name_asc";
+      limit: number;
+    }
+  ) => {
+    const headers = [
+      "productId",
+      "slug",
+      "name",
+      "brand",
+      "category",
+      "status",
+      "basePriceCents",
+      "currency",
+      "createdAt",
+      "updatedAt"
+    ];
+    const rows: string[][] = [];
+    const pageSize = Math.min(200, params.limit);
+    let page = 1;
+    let exportedCount = 0;
+
+    while (exportedCount < params.limit) {
+      const result = await productService.listAdminProducts({
+        page,
+        pageSize: Math.min(pageSize, params.limit - exportedCount),
+        search: params.search,
+        brand: params.brand,
+        categoryId: params.categoryId,
+        status: params.status,
+        sortBy: params.sortBy
+      });
+      const chunk = result.items;
+
+      if (chunk.length === 0) {
+        break;
+      }
+
+      rows.push(
+        ...chunk.map((item) => [
+          item.id,
+          item.slug,
+          item.name,
+          item.brand,
+          item.category.name,
+          item.status,
+          String(item.basePriceCents),
+          item.currency,
+          item.createdAt.toISOString(),
+          item.updatedAt.toISOString()
+        ])
+      );
+
+      exportedCount += chunk.length;
+      page += 1;
+    }
+
+    const csv = buildCsv(headers, rows);
+
+    await auditRepository.logAdminAction({
+      adminId,
+      action: "PRODUCT_EXPORT",
+      targetType: "PRODUCT",
+      targetId: "bulk",
+      details: {
+        search: params.search ?? null,
+        brand: params.brand ?? null,
+        categoryId: params.categoryId ?? null,
+        status: params.status ?? null,
+        sortBy: params.sortBy,
+        limit: params.limit,
+        exportedCount
+      }
+    });
+
+    return {
+      csv,
+      exportedCount
+    };
+  },
 
   listProductCategories: async () => productService.listCategories(),
 
