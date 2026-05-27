@@ -39,7 +39,7 @@ const fetchCart = async (): Promise<CartPayload> => {
 };
 
 export default function CheckoutPage(): JSX.Element {
-    const { data: cart, isLoading, isError } = useQuery({
+  const { data: cart, isLoading, isError } = useQuery({
     queryKey: ["cart", "checkout"],
     queryFn: fetchCart
   });
@@ -98,7 +98,7 @@ export default function CheckoutPage(): JSX.Element {
             line1,
             line2: line2.trim() || undefined,
             postalCode,
-            country: "US"
+            country: "RU"
           }
         })
       });
@@ -130,7 +130,7 @@ export default function CheckoutPage(): JSX.Element {
         <div>
           <p className="text-xs uppercase tracking-[0.22em] text-primary">RSH Checkout</p>
           <h1 className="mt-2 text-3xl font-semibold">Оформление заказа</h1>
-          <p className="mt-2 text-sm text-muted-foreground">Пока поддерживается доставка только по США.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Доставка оформляется по России, сумма отображается в рублях.</p>
         </div>
 
         {errorMessage ? (
@@ -160,7 +160,7 @@ export default function CheckoutPage(): JSX.Element {
         </label>
 
         <label className="block space-y-1">
-          <span className="text-sm">Штат</span>
+          <span className="text-sm">Регион</span>
           <input
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
             value={state}

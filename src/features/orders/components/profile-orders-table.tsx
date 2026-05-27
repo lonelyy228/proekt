@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
@@ -25,12 +25,12 @@ const ORDER_STATUS_FILTERS: Array<{
   label: string;
   value: "" | "PENDING" | "PAID" | "FULFILLED" | "CANCELLED" | "REFUNDED";
 }> = [
-  { label: "Р’СЃРµ", value: "" },
-  { label: "РћР¶РёРґР°РµС‚ РѕРїР»Р°С‚С‹", value: "PENDING" },
-  { label: "РћРїР»Р°С‡РµРЅ", value: "PAID" },
-  { label: "Р’С‹РїРѕР»РЅРµРЅ", value: "FULFILLED" },
-  { label: "РћС‚РјРµРЅРµРЅ", value: "CANCELLED" },
-  { label: "Р’РѕР·РІСЂР°С‚", value: "REFUNDED" }
+  { label: "Все", value: "" },
+  { label: "Ожидает оплаты", value: "PENDING" },
+  { label: "Оплачен", value: "PAID" },
+  { label: "Выполнен", value: "FULFILLED" },
+  { label: "Отменен", value: "CANCELLED" },
+  { label: "Возврат", value: "REFUNDED" }
 ];
 
 const formatDate = (value: string): string =>
@@ -40,8 +40,10 @@ const formatDate = (value: string): string =>
     day: "2-digit"
   });
 
+const formatOrderNumber = (id: string): string => id.slice(-8).toUpperCase();
+
 export const ProfileOrdersTable = (): JSX.Element => {
-    const [page, setPage] = useState<number>(1);
+  const [page, setPage] = useState<number>(1);
   const [status, setStatus] = useState<"" | "PENDING" | "PAID" | "FULFILLED" | "CANCELLED" | "REFUNDED">("");
   const pageSize = 10;
 
@@ -61,7 +63,7 @@ export const ProfileOrdersTable = (): JSX.Element => {
 
       const response = await fetch(`/api/profile/orders?${params.toString()}`, { credentials: "include" });
       if (!response.ok) {
-        throw new Error("РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ РёСЃС‚РѕСЂРёСЋ Р·Р°РєР°Р·РѕРІ");
+        throw new Error("Не удалось загрузить историю заказов");
       }
 
       const payload = (await response.json()) as { success: boolean; data: OrdersPayload };
@@ -72,9 +74,9 @@ export const ProfileOrdersTable = (): JSX.Element => {
   return (
     <section className="space-y-4 rounded-xl border bg-card p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-semibold">РСЃС‚РѕСЂРёСЏ Р·Р°РєР°Р·РѕРІ</h2>
+        <h2 className="text-xl font-semibold">История заказов</h2>
         <label className="flex items-center gap-2 text-sm">
-          <span className="text-muted-foreground">РЎС‚Р°С‚СѓСЃ</span>
+          <span className="text-muted-foreground">Статус</span>
           <select
             value={status}
             onChange={(event) => {
@@ -92,8 +94,8 @@ export const ProfileOrdersTable = (): JSX.Element => {
         </label>
       </div>
 
-      {ordersQuery.isLoading ? <p className="text-sm text-muted-foreground">Р—Р°РіСЂСѓР¶Р°РµРј Р·Р°РєР°Р·С‹...</p> : null}
-      {ordersQuery.isError ? <p className="text-sm text-destructive">РќРµ СѓРґР°Р»РѕСЃСЊ Р·Р°РіСЂСѓР·РёС‚СЊ Р·Р°РєР°Р·С‹.</p> : null}
+      {ordersQuery.isLoading ? <p className="text-sm text-muted-foreground">Загружаем заказы...</p> : null}
+      {ordersQuery.isError ? <p className="text-sm text-destructive">Не удалось загрузить заказы.</p> : null}
 
       {ordersQuery.data && ordersQuery.data.items.length > 0 ? (
         <>
@@ -101,19 +103,19 @@ export const ProfileOrdersTable = (): JSX.Element => {
             <table className="w-full text-left text-sm">
               <thead className="bg-muted/40">
                 <tr>
-                  <th className="p-3">Р—Р°РєР°Р·</th>
-                  <th className="p-3">Р”Р°С‚Р°</th>
-                  <th className="p-3">РЎС‚Р°С‚СѓСЃ</th>
-                  <th className="p-3">РЎСѓРјРјР°</th>
+                  <th className="p-3">Заказ</th>
+                  <th className="p-3">Дата</th>
+                  <th className="p-3">Статус</th>
+                  <th className="p-3">Сумма</th>
                 </tr>
               </thead>
               <tbody>
                 {ordersQuery.data.items.map((order) => (
                   <tr key={order.id} className="border-t">
-                    <td className="p-3">в„–{order.id}</td>
+                    <td className="p-3">№{formatOrderNumber(order.id)}</td>
                     <td className="p-3">{formatDate(order.createdAt)}</td>
                     <td className="p-3">{getOrderStatusLabel(order.status)}</td>
-                    <td className="p-3">{formatStoreMoney(order.totalCents, order.currency )}</td>
+                    <td className="p-3">{formatStoreMoney(order.totalCents, order.currency)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -122,7 +124,7 @@ export const ProfileOrdersTable = (): JSX.Element => {
 
           <div className="flex items-center justify-between text-sm">
             <p className="text-muted-foreground">
-              РЎС‚СЂР°РЅРёС†Р° {ordersQuery.data.page} РёР· {ordersQuery.data.totalPages} ({ordersQuery.data.total} Р·Р°РєР°Р·РѕРІ)
+              Страница {ordersQuery.data.page} из {ordersQuery.data.totalPages} ({ordersQuery.data.total} заказов)
             </p>
             <div className="flex gap-2">
               <button
@@ -131,17 +133,15 @@ export const ProfileOrdersTable = (): JSX.Element => {
                 disabled={ordersQuery.data.page <= 1}
                 onClick={() => setPage((current) => Math.max(1, current - 1))}
               >
-                РќР°Р·Р°Рґ
+                Назад
               </button>
               <button
                 type="button"
                 className="rounded-md border px-3 py-1 disabled:opacity-40"
                 disabled={ordersQuery.data.page >= ordersQuery.data.totalPages}
-                onClick={() =>
-                  setPage((current) => Math.min(ordersQuery.data?.totalPages ?? current, current + 1))
-                }
+                onClick={() => setPage((current) => Math.min(ordersQuery.data?.totalPages ?? current, current + 1))}
               >
-                Р’РїРµСЂРµРґ
+                Вперед
               </button>
             </div>
           </div>
@@ -149,9 +149,8 @@ export const ProfileOrdersTable = (): JSX.Element => {
       ) : null}
 
       {ordersQuery.data && ordersQuery.data.items.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Р—Р°РєР°Р·РѕРІ СЃ РІС‹Р±СЂР°РЅРЅС‹Рј СЃС‚Р°С‚СѓСЃРѕРј РЅРµ РЅР°Р№РґРµРЅРѕ.</p>
+        <p className="text-sm text-muted-foreground">Заказов с выбранным статусом не найдено.</p>
       ) : null}
     </section>
   );
 };
-
