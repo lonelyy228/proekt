@@ -48,6 +48,8 @@ enum GarmentType {
   TSHIRT
   HOODIE
   SWEATSHIRT
+  SHORTS
+  PANTS
 }
 
 enum ContentStatus {

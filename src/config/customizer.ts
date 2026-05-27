@@ -1,4 +1,4 @@
-const normalizeBrand = (brand: string): string => brand.trim().replace(/\s+/g, " ").toUpperCase();
+﻿const normalizeBrand = (brand: string): string => brand.trim().replace(/\s+/g, " ").toUpperCase();
 
 export const CUSTOMIZER_BASE_BRANDS = ["RSH BASICS"] as const;
 
