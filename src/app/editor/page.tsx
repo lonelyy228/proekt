@@ -1,4 +1,4 @@
-import dynamic from "next/dynamic";
+﻿import dynamic from "next/dynamic";
 import Link from "next/link";
 
 const EditorCanvas = dynamic(
@@ -13,11 +13,15 @@ export default function EditorPage(): JSX.Element {
         RSH 2D LAB
       </h1>
       <p className="text-muted-foreground">
-        2D Lab работает только для базовой линейки RSH BASICS. Брендовые товары в каталоге продаются без кастомизации.
-        Создай уникальный дизайн для базовой вещи, добавь текст и графику и сохрани результат в профиль.
+        2D Lab работает только для базовой линейки RSH BASICS. Брендовые товары в каталоге продаются без
+        кастомизации. Создай уникальный дизайн для базовой вещи, добавь текст и графику и сохрани результат в
+        профиль.
       </p>
       <div>
-        <Link href="/catalog/basics" className="inline-block rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary">
+        <Link
+          href="/catalog/basics"
+          className="inline-block rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary"
+        >
           Открыть каталог RSH BASICS
         </Link>
       </div>
