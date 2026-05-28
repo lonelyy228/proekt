@@ -13,7 +13,7 @@ const designObjectSchema = z.object({
 });
 
 export const designSchema = z.object({
-  garmentType: z.enum(["TSHIRT", "HOODIE", "SWEATSHIRT"]),
+  garmentType: z.enum(["TSHIRT", "HOODIE", "SWEATSHIRT", "SHORTS"]),
   garmentColor: z.string().min(1).max(32),
   canvasJson: z.object({
     version: z.string(),

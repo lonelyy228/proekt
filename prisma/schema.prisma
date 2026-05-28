@@ -48,6 +48,8 @@ enum GarmentType {
   TSHIRT
   HOODIE
   SWEATSHIRT
+  SHORTS
+  PANTS
 }
 
 enum ContentStatus {
@@ -530,3 +532,4 @@ model AdminAction {
   @@index([adminId, createdAt])
   @@index([targetType, targetId])
 }
+

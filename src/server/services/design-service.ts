@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 
 export const designService = {
   create: async (userId: string, payload: {
-    garmentType: "TSHIRT" | "HOODIE" | "SWEATSHIRT";
+    garmentType: "TSHIRT" | "HOODIE" | "SWEATSHIRT" | "SHORTS";
     garmentColor: string;
     canvasJson: { version: string; objects: Array<Record<string, unknown>> };
     previewUrl: string;
