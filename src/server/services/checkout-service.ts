@@ -4,8 +4,11 @@ import { cartService } from "@/server/services/cart-service";
 import { orderRepository } from "@/server/repositories/order-repository";
 import { stripe } from "@/lib/stripe";
 import { env } from "@/config/env";
+import { isCustomizerBaseBrand, CUSTOMIZER_BRAND_RESTRICTION_MESSAGE } from "@/config/customizer";
 import { AppError } from "@/server/utils/errors";
 import { stripeEventRepository } from "@/server/repositories/stripe-event-repository";
+import { designRepository } from "@/server/repositories/design-repository";
+import { productRepository } from "@/server/repositories/product-repository";
 import { prisma } from "@/lib/prisma";
 import { cartRepository } from "@/server/repositories/cart-repository";
 import type Stripe from "stripe";
@@ -14,6 +17,38 @@ const centsToStripeAmount = (amount: number): number => amount;
 const appendQuery = (url: string, key: string, value: string): string => {
   const separator = url.includes("?") ? "&" : "?";
   return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+};
+
+const validateCheckoutItemReferences = async (
+  userId: string,
+  item: { productId: string; variantId: string; customizationId?: string | null }
+): Promise<void> => {
+  const [product, variant] = await Promise.all([
+    productRepository.findById(item.productId),
+    productRepository.findVariantById(item.variantId)
+  ]);
+
+  if (!product) {
+    throw new AppError("NOT_FOUND", "Product not found");
+  }
+
+  if (!variant || variant.productId !== product.id) {
+    throw new AppError("VALIDATION_ERROR", "Variant does not belong to the selected product");
+  }
+
+  if (!item.customizationId) {
+    return;
+  }
+
+  if (!isCustomizerBaseBrand(product.brand)) {
+    throw new AppError("FORBIDDEN", CUSTOMIZER_BRAND_RESTRICTION_MESSAGE);
+  }
+
+  const design = await designRepository.findById(item.customizationId, userId);
+
+  if (!design) {
+    throw new AppError("NOT_FOUND", "Customization design not found");
+  }
 };
 
 const processCheckoutCompletedEvent = async (event: Stripe.Event): Promise<void> => {
@@ -81,6 +116,16 @@ export const checkoutService = {
     if (cart.items.length === 0) {
       throw new AppError("VALIDATION_ERROR", "Cart is empty");
     }
+
+    await Promise.all(
+      cart.items.map((item) =>
+        validateCheckoutItemReferences(userId, {
+          productId: item.productId,
+          variantId: item.variantId,
+          customizationId: item.customizationId
+        })
+      )
+    );
 
     const subtotalCents = cart.subtotalCents;
     const shippingCents = subtotalCents >= 10000 ? 0 : 999;

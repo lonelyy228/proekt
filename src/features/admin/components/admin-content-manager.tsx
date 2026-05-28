@@ -5,8 +5,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ensureCsrfToken } from "@/lib/csrf-client";
 import { useDebouncedValue } from "@/features/admin/hooks/use-debounced-value";
-import { countActiveFilters } from "@/features/admin/lib/admin-table-utils";
+import { buildQueryString, countActiveFilters, toTrimmedOrUndefined } from "@/features/admin/lib/admin-table-utils";
 import { AdminSavedViewsPanel } from "@/features/admin/components/admin-saved-views-panel";
+import { buildExportFileName, downloadCsvFile } from "@/features/admin/lib/file-download";
 
 type ContentStatus = "DRAFT" | "PUBLISHED" | "ARCHIVED";
 
@@ -109,6 +110,7 @@ export const AdminContentManager = (): JSX.Element => {
 
   const didInitFromUrlRef = useRef<boolean>(false);
   const lastSerializedFiltersRef = useRef<string>("");
+  const didAutoApplyDefaultPresetRef = useRef<boolean>(false);
 
   const [page, setPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(20);
@@ -123,6 +125,7 @@ export const AdminContentManager = (): JSX.Element => {
   const [bulkResult, setBulkResult] = useState<ContentBulkResult | null>(null);
 
   const [copyLinkState, setCopyLinkState] = useState<"idle" | "copied" | "error">("idle");
+  const [exportState, setExportState] = useState<"idle" | "loading" | "error">("idle");
   const [presetName, setPresetName] = useState<string>("");
   const [presetAsDefault, setPresetAsDefault] = useState<boolean>(false);
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
@@ -146,11 +149,13 @@ export const AdminContentManager = (): JSX.Element => {
       nextStatusRaw === "DRAFT" || nextStatusRaw === "PUBLISHED" || nextStatusRaw === "ARCHIVED"
         ? nextStatusRaw
         : "";
+    const nextView = searchParams.get("view") ?? "";
 
     setPage(nextPage);
     setPageSize(nextPageSize);
     setSearchInput(nextSearch);
     setStatusFilter(nextStatus);
+    setSelectedPresetId(nextView);
 
     lastSerializedFiltersRef.current = searchParams.toString();
     didInitFromUrlRef.current = true;
@@ -181,6 +186,9 @@ export const AdminContentManager = (): JSX.Element => {
     if (statusFilter) {
       params.set("status", statusFilter);
     }
+    if (selectedPresetId) {
+      params.set("view", selectedPresetId);
+    }
 
     const serialized = params.toString();
     if (serialized === lastSerializedFiltersRef.current) {
@@ -190,7 +198,7 @@ export const AdminContentManager = (): JSX.Element => {
     lastSerializedFiltersRef.current = serialized;
     const href = serialized ? `${pathname}?${serialized}` : pathname;
     router.replace(href, { scroll: false });
-  }, [debouncedSearch, page, pageSize, pathname, router, statusFilter]);
+  }, [debouncedSearch, page, pageSize, pathname, router, selectedPresetId, statusFilter]);
 
   const queryKey = useMemo(
     () => ["admin-content-posts", page, pageSize, debouncedSearch, statusFilter],
@@ -263,6 +271,48 @@ export const AdminContentManager = (): JSX.Element => {
     setSelectedPostIds([]);
     setBulkResult(null);
   };
+
+  useEffect(() => {
+    if (!presetsQuery.data || !selectedPresetId) {
+      return;
+    }
+
+    if (!presetsQuery.data.some((preset) => preset.id === selectedPresetId)) {
+      setSelectedPresetId("");
+    }
+  }, [presetsQuery.data, selectedPresetId]);
+
+  useEffect(() => {
+    if (didAutoApplyDefaultPresetRef.current) {
+      return;
+    }
+    if (!didInitFromUrlRef.current || !presetsQuery.data) {
+      return;
+    }
+    if (selectedPresetId) {
+      didAutoApplyDefaultPresetRef.current = true;
+      return;
+    }
+
+    const hasManualFilters =
+      page > 1 || pageSize !== 20 || debouncedSearch.trim().length > 0 || Boolean(statusFilter);
+    if (hasManualFilters) {
+      didAutoApplyDefaultPresetRef.current = true;
+      return;
+    }
+
+    const defaultPreset = presetsQuery.data.find((preset) => preset.isDefault);
+    if (!defaultPreset) {
+      didAutoApplyDefaultPresetRef.current = true;
+      return;
+    }
+
+    didAutoApplyDefaultPresetRef.current = true;
+    setSelectedPresetId(defaultPreset.id);
+    applyPresetFilters(defaultPreset.filters);
+    setInfoMessage(`Применено представление по умолчанию: ${defaultPreset.name}`);
+    setErrorMessage("");
+  }, [debouncedSearch, page, pageSize, presetsQuery.data, selectedPresetId, statusFilter]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -528,6 +578,34 @@ export const AdminContentManager = (): JSX.Element => {
     }
   };
 
+  const exportContentCsv = async (): Promise<void> => {
+    try {
+      setExportState("loading");
+      const query = buildQueryString([
+        ["search", toTrimmedOrUndefined(debouncedSearch)],
+        ["status", statusFilter || undefined],
+        ["limit", "1000"]
+      ]);
+      const response = await fetch(`/api/admin/content/export${query ? `?${query}` : ""}`, {
+        credentials: "include"
+      });
+      if (!response.ok) {
+        throw new Error(await extractErrorMessage(response, "Не удалось выгрузить контент"));
+      }
+
+      const csv = await response.text();
+      downloadCsvFile(buildExportFileName("admin-content", "csv"), csv);
+      setInfoMessage("CSV выгрузка контента готова");
+      setErrorMessage("");
+      setExportState("idle");
+    } catch (error: unknown) {
+      setInfoMessage("");
+      setErrorMessage(error instanceof Error ? error.message : "Ошибка выгрузки контента");
+      setExportState("error");
+      setTimeout(() => setExportState("idle"), 2000);
+    }
+  };
+
   const activeFiltersCount = countActiveFilters([
     debouncedSearch.trim().length > 0,
     Boolean(statusFilter),
@@ -623,7 +701,7 @@ export const AdminContentManager = (): JSX.Element => {
       </div>
 
       <div className="sticky top-0 z-20 rounded-xl border bg-background/95 p-3 backdrop-blur">
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-7">
           <input
             className="rounded-md border bg-background px-3 py-2 text-sm"
             placeholder="Поиск по заголовку и slug"
@@ -669,6 +747,16 @@ export const AdminContentManager = (): JSX.Element => {
               : copyLinkState === "error"
                 ? "Ошибка копирования"
                 : "Скопировать ссылку"}
+          </button>
+          <button
+            type="button"
+            className="rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary disabled:opacity-40"
+            onClick={() => {
+              void exportContentCsv();
+            }}
+            disabled={exportState === "loading"}
+          >
+            {exportState === "loading" ? "Готовим CSV..." : exportState === "error" ? "Ошибка выгрузки" : "Экспорт CSV"}
           </button>
           <button
             type="button"

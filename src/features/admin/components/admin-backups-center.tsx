@@ -5,6 +5,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
 import { AdminBackupsSnapshot } from "@/features/admin/types/admin-operations";
+import { buildSnapshotFileName, downloadJsonFile } from "@/features/admin/lib/file-download";
 
 type BackupsTab = "policy" | "runbook" | "drills";
 
@@ -88,6 +89,20 @@ export const AdminBackupsCenter = (): JSX.Element => {
     await navigator.clipboard.writeText(text);
   };
 
+  const exportBackupsSnapshot = (): void => {
+    if (!backupsQuery.data) {
+      return;
+    }
+
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      sourceUrl: `${window.location.origin}${pathname}${window.location.search}`,
+      ...backupsQuery.data
+    };
+
+    downloadJsonFile(buildSnapshotFileName("admin-backups-snapshot", "json"), payload);
+  };
+
   const providerSummary = useMemo(() => {
     if (!backupsQuery.data) {
       return "-";
@@ -130,6 +145,14 @@ export const AdminBackupsCenter = (): JSX.Element => {
             }}
           >
             Скопировать runbook
+          </button>
+          <button
+            type="button"
+            className="rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary disabled:opacity-50"
+            disabled={!backupsQuery.data}
+            onClick={exportBackupsSnapshot}
+          >
+            Экспорт JSON
           </button>
         </div>
       </div>

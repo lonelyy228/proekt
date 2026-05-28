@@ -34,6 +34,16 @@ export const adminUsersQuerySchema = z.object({
     .optional()
 });
 
+export const adminUsersExportQuerySchema = z.object({
+  search: z.string().trim().max(120).optional(),
+  role: z.enum(["USER", "ADMIN"]).optional(),
+  isBlocked: z
+    .enum(["true", "false"])
+    .transform((value) => value === "true")
+    .optional(),
+  limit: z.coerce.number().int().positive().max(2000).default(500)
+});
+
 export const adminUserUpdateSchema = z
   .object({
     role: z.enum(["USER", "ADMIN"]).optional(),
@@ -223,6 +233,15 @@ export const adminProductFilterPresetFiltersSchema = z.object({
   categoryId: z.string().cuid().optional(),
   status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).optional(),
   sortBy: z.enum(["newest", "price_asc", "price_desc", "name_asc"]).optional()
+});
+
+export const adminProductsExportQuerySchema = z.object({
+  search: z.string().trim().max(120).optional(),
+  brand: z.string().trim().max(80).optional(),
+  categoryId: z.string().cuid().optional(),
+  status: z.enum(["DRAFT", "ACTIVE", "ARCHIVED"]).optional(),
+  sortBy: z.enum(["newest", "price_asc", "price_desc", "name_asc"]).default("newest"),
+  limit: z.coerce.number().int().positive().max(2000).default(500)
 });
 
 export const adminProductFilterPresetCreateSchema = z.object({

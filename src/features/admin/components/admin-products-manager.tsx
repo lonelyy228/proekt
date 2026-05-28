@@ -5,8 +5,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ensureCsrfToken } from "@/lib/csrf-client";
 import { useDebouncedValue } from "@/features/admin/hooks/use-debounced-value";
-import { countActiveFilters } from "@/features/admin/lib/admin-table-utils";
+import { buildQueryString, countActiveFilters, toTrimmedOrUndefined } from "@/features/admin/lib/admin-table-utils";
 import { AdminSavedViewsPanel } from "@/features/admin/components/admin-saved-views-panel";
+import { buildExportFileName, downloadCsvFile } from "@/features/admin/lib/file-download";
 
 type ProductStatus = "DRAFT" | "ACTIVE" | "ARCHIVED";
 type ProductSortBy = "newest" | "price_asc" | "price_desc" | "name_asc";
@@ -156,6 +157,7 @@ export const AdminProductsManager = (): JSX.Element => {
   const searchParams = useSearchParams();
   const didInitFromUrlRef = useRef<boolean>(false);
   const lastSerializedFiltersRef = useRef<string>("");
+  const didAutoApplyDefaultPresetRef = useRef<boolean>(false);
 
   const [page, setPage] = useState<number>(1);
   const [searchInput, setSearchInput] = useState<string>("");
@@ -179,6 +181,7 @@ export const AdminProductsManager = (): JSX.Element => {
   const [editForm, setEditForm] = useState<ProductFormState | null>(null);
 
   const [copyLinkState, setCopyLinkState] = useState<"idle" | "copied" | "error">("idle");
+  const [exportState, setExportState] = useState<"idle" | "loading" | "error">("idle");
   const [infoMessage, setInfoMessage] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string>("");
 
@@ -205,6 +208,7 @@ export const AdminProductsManager = (): JSX.Element => {
       nextSortByRaw === "name_asc"
         ? nextSortByRaw
         : "newest";
+    const nextView = searchParams.get("view") ?? "";
 
     setPage(nextPage);
     setSearchInput(nextSearch);
@@ -212,6 +216,7 @@ export const AdminProductsManager = (): JSX.Element => {
     setCategoryId(nextCategoryId);
     setStatus(nextStatus);
     setSortBy(nextSortBy);
+    setSelectedPresetId(nextView);
 
     lastSerializedFiltersRef.current = searchParams.toString();
     didInitFromUrlRef.current = true;
@@ -248,6 +253,9 @@ export const AdminProductsManager = (): JSX.Element => {
     if (sortBy !== "newest") {
       params.set("sortBy", sortBy);
     }
+    if (selectedPresetId) {
+      params.set("view", selectedPresetId);
+    }
 
     const serialized = params.toString();
     if (serialized === lastSerializedFiltersRef.current) {
@@ -257,7 +265,7 @@ export const AdminProductsManager = (): JSX.Element => {
     lastSerializedFiltersRef.current = serialized;
     const href = serialized ? `${pathname}?${serialized}` : pathname;
     router.replace(href, { scroll: false });
-  }, [brand, categoryId, debouncedSearch, page, pathname, router, sortBy, status]);
+  }, [brand, categoryId, debouncedSearch, page, pathname, router, selectedPresetId, sortBy, status]);
 
   const categoriesQuery = useQuery({
     queryKey: ["admin-product-categories"],
@@ -354,6 +362,54 @@ export const AdminProductsManager = (): JSX.Element => {
     setSelectedProductIds([]);
     setBulkResult(null);
   };
+
+  useEffect(() => {
+    if (!presetsQuery.data || !selectedPresetId) {
+      return;
+    }
+
+    if (!presetsQuery.data.some((preset) => preset.id === selectedPresetId)) {
+      setSelectedPresetId("");
+    }
+  }, [presetsQuery.data, selectedPresetId]);
+
+  useEffect(() => {
+    if (didAutoApplyDefaultPresetRef.current) {
+      return;
+    }
+    if (!didInitFromUrlRef.current || !presetsQuery.data) {
+      return;
+    }
+    if (selectedPresetId) {
+      didAutoApplyDefaultPresetRef.current = true;
+      return;
+    }
+
+    const hasManualFilters =
+      page > 1 ||
+      debouncedSearch.trim().length > 0 ||
+      brand.trim().length > 0 ||
+      Boolean(categoryId) ||
+      Boolean(status) ||
+      sortBy !== "newest";
+
+    if (hasManualFilters) {
+      didAutoApplyDefaultPresetRef.current = true;
+      return;
+    }
+
+    const defaultPreset = presetsQuery.data.find((preset) => preset.isDefault);
+    if (!defaultPreset) {
+      didAutoApplyDefaultPresetRef.current = true;
+      return;
+    }
+
+    didAutoApplyDefaultPresetRef.current = true;
+    setSelectedPresetId(defaultPreset.id);
+    applyPresetFilters(defaultPreset.filters);
+    setInfoMessage(`Применено представление по умолчанию: ${defaultPreset.name}`);
+    setErrorMessage("");
+  }, [brand, categoryId, debouncedSearch, page, presetsQuery.data, selectedPresetId, sortBy, status]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -695,6 +751,37 @@ export const AdminProductsManager = (): JSX.Element => {
     }
   };
 
+  const exportProductsCsv = async (): Promise<void> => {
+    try {
+      setExportState("loading");
+      const query = buildQueryString([
+        ["search", toTrimmedOrUndefined(debouncedSearch)],
+        ["brand", toTrimmedOrUndefined(brand)],
+        ["categoryId", categoryId || undefined],
+        ["status", status || undefined],
+        ["sortBy", sortBy],
+        ["limit", "1000"]
+      ]);
+      const response = await fetch(`/api/admin/products/export${query ? `?${query}` : ""}`, {
+        credentials: "include"
+      });
+      if (!response.ok) {
+        throw new Error(await extractErrorMessage(response, "Не удалось выгрузить товары"));
+      }
+
+      const csv = await response.text();
+      downloadCsvFile(buildExportFileName("admin-products", "csv"), csv);
+      setInfoMessage("CSV выгрузка товаров готова");
+      setErrorMessage("");
+      setExportState("idle");
+    } catch (error: unknown) {
+      setInfoMessage("");
+      setErrorMessage(error instanceof Error ? error.message : "Ошибка выгрузки товаров");
+      setExportState("error");
+      setTimeout(() => setExportState("idle"), 2000);
+    }
+  };
+
   const loadedProductIds = productsQuery.data?.items.map((item) => item.id) ?? [];
   const selectedLoadedIds = loadedProductIds.filter((id) => selectedProductIds.includes(id));
   const allSelectedLoaded = loadedProductIds.length > 0 && selectedLoadedIds.length === loadedProductIds.length;
@@ -736,7 +823,7 @@ export const AdminProductsManager = (): JSX.Element => {
       <h2 className="text-2xl font-semibold">Товары</h2>
 
       <div className="rounded-xl border bg-card p-4">
-        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-6">
+        <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-7">
           <input
             className="rounded-md border bg-background px-3 py-2 text-sm"
             placeholder="Поиск по имени или slug"
@@ -792,6 +879,17 @@ export const AdminProductsManager = (): JSX.Element => {
             onClick={() => void copyFiltersLink()}
           >
             {copyLinkState === "copied" ? "Ссылка скопирована" : copyLinkState === "error" ? "Ошибка копирования" : "Скопировать ссылку"}
+          </button>
+
+          <button
+            type="button"
+            className="rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary disabled:opacity-40"
+            onClick={() => {
+              void exportProductsCsv();
+            }}
+            disabled={exportState === "loading"}
+          >
+            {exportState === "loading" ? "Готовим CSV..." : exportState === "error" ? "Ошибка выгрузки" : "Экспорт CSV"}
           </button>
         </div>
 

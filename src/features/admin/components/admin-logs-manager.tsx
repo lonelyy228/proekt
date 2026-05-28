@@ -5,8 +5,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ensureCsrfToken } from "@/lib/csrf-client";
 import { useDebouncedValue } from "@/features/admin/hooks/use-debounced-value";
-import { countActiveFilters } from "@/features/admin/lib/admin-table-utils";
+import { buildQueryString, countActiveFilters, toTrimmedOrUndefined } from "@/features/admin/lib/admin-table-utils";
 import { AdminSavedViewsPanel } from "@/features/admin/components/admin-saved-views-panel";
+import { buildExportFileName, downloadCsvFile } from "@/features/admin/lib/file-download";
 
 type AdminLogItem = {
   id: string;
@@ -97,6 +98,7 @@ export const AdminLogsManager = (): JSX.Element => {
 
   const didInitFromUrlRef = useRef<boolean>(false);
   const lastSerializedFiltersRef = useRef<string>("");
+  const didAutoApplyDefaultPresetRef = useRef<boolean>(false);
 
   const [page, setPage] = useState<number>(1);
   const [pageSize, setPageSize] = useState<number>(20);
@@ -106,6 +108,7 @@ export const AdminLogsManager = (): JSX.Element => {
   const debouncedSearch = useDebouncedValue(searchInput, 350);
 
   const [copyLinkState, setCopyLinkState] = useState<"idle" | "copied" | "error">("idle");
+  const [exportState, setExportState] = useState<"idle" | "loading" | "error">("idle");
   const [presetName, setPresetName] = useState<string>("");
   const [presetAsDefault, setPresetAsDefault] = useState<boolean>(false);
   const [selectedPresetId, setSelectedPresetId] = useState<string>("");
@@ -128,6 +131,7 @@ export const AdminLogsManager = (): JSX.Element => {
     setAction(searchParams.get("action") ?? "");
     setTargetType(searchParams.get("targetType") ?? "");
     setSearchInput(searchParams.get("search") ?? "");
+    setSelectedPresetId(searchParams.get("view") ?? "");
 
     lastSerializedFiltersRef.current = searchParams.toString();
     didInitFromUrlRef.current = true;
@@ -161,6 +165,9 @@ export const AdminLogsManager = (): JSX.Element => {
     if (debouncedSearch.trim()) {
       params.set("search", debouncedSearch.trim());
     }
+    if (selectedPresetId) {
+      params.set("view", selectedPresetId);
+    }
 
     const serialized = params.toString();
     if (serialized === lastSerializedFiltersRef.current) {
@@ -170,7 +177,7 @@ export const AdminLogsManager = (): JSX.Element => {
     lastSerializedFiltersRef.current = serialized;
     const href = serialized ? `${pathname}?${serialized}` : pathname;
     router.replace(href, { scroll: false });
-  }, [action, debouncedSearch, page, pageSize, pathname, router, targetType]);
+  }, [action, debouncedSearch, page, pageSize, pathname, router, selectedPresetId, targetType]);
 
   const queryKey = useMemo(
     () => ["admin-logs", page, pageSize, action, targetType, debouncedSearch],
@@ -249,6 +256,52 @@ export const AdminLogsManager = (): JSX.Element => {
     setSearchInput(filters.search ?? "");
     setPage(1);
   };
+
+  useEffect(() => {
+    if (!presetsQuery.data || !selectedPresetId) {
+      return;
+    }
+
+    if (!presetsQuery.data.some((preset) => preset.id === selectedPresetId)) {
+      setSelectedPresetId("");
+    }
+  }, [presetsQuery.data, selectedPresetId]);
+
+  useEffect(() => {
+    if (didAutoApplyDefaultPresetRef.current) {
+      return;
+    }
+    if (!didInitFromUrlRef.current || !presetsQuery.data) {
+      return;
+    }
+    if (selectedPresetId) {
+      didAutoApplyDefaultPresetRef.current = true;
+      return;
+    }
+
+    const hasManualFilters =
+      page > 1 ||
+      pageSize !== 20 ||
+      action.trim().length > 0 ||
+      targetType.trim().length > 0 ||
+      debouncedSearch.trim().length > 0;
+    if (hasManualFilters) {
+      didAutoApplyDefaultPresetRef.current = true;
+      return;
+    }
+
+    const defaultPreset = presetsQuery.data.find((preset) => preset.isDefault);
+    if (!defaultPreset) {
+      didAutoApplyDefaultPresetRef.current = true;
+      return;
+    }
+
+    didAutoApplyDefaultPresetRef.current = true;
+    setSelectedPresetId(defaultPreset.id);
+    applyPresetFilters(defaultPreset.filters);
+    setInfoMessage(`Применено представление по умолчанию: ${defaultPreset.name}`);
+    setErrorMessage("");
+  }, [action, debouncedSearch, page, pageSize, presetsQuery.data, selectedPresetId, targetType]);
 
   const createPresetMutation = useMutation({
     mutationFn: async () => {
@@ -397,6 +450,35 @@ export const AdminLogsManager = (): JSX.Element => {
     } catch {
       setInfoMessage("");
       setErrorMessage("Не удалось скопировать JSON деталей");
+    }
+  };
+
+  const exportLogsCsv = async (): Promise<void> => {
+    try {
+      setExportState("loading");
+      const query = buildQueryString([
+        ["action", toTrimmedOrUndefined(action)],
+        ["targetType", toTrimmedOrUndefined(targetType)],
+        ["search", toTrimmedOrUndefined(debouncedSearch)],
+        ["limit", "1000"]
+      ]);
+      const response = await fetch(`/api/admin/logs/export${query ? `?${query}` : ""}`, {
+        credentials: "include"
+      });
+      if (!response.ok) {
+        throw new Error(await extractErrorMessage(response, "Не удалось выгрузить логи"));
+      }
+
+      const csv = await response.text();
+      downloadCsvFile(buildExportFileName("admin-logs", "csv"), csv);
+      setInfoMessage("CSV выгрузка логов готова");
+      setErrorMessage("");
+      setExportState("idle");
+    } catch (error: unknown) {
+      setInfoMessage("");
+      setErrorMessage(error instanceof Error ? error.message : "Ошибка выгрузки логов");
+      setExportState("error");
+      setTimeout(() => setExportState("idle"), 2000);
     }
   };
 
