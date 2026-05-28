@@ -8,7 +8,7 @@ const addressSchema = z.object({
   city: z.string().min(1).max(80),
   state: z.string().min(1).max(80),
   postalCode: z.string().min(2).max(16),
-  country: z.literal("US")
+  country: z.literal("RU")
 });
 
 export const checkoutSessionSchema = z.object({
