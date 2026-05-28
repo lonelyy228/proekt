@@ -1,7 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { cookieConfig } from "@/config/constants";
 
-const protectedPathPrefixes = ["/profile", "/cart", "/checkout", "/favorites", "/editor", "/admin"];
+const protectedPathPrefixes = ["/profile", "/cart", "/checkout", "/favorites", "/admin"];
 const publicApiPaths = ["/api/auth/login", "/api/auth/register", "/api/auth/refresh", "/api/webhooks/stripe"];
 
 const securityHeaders = {
@@ -75,7 +75,6 @@ export const config = {
     "/cart/:path*",
     "/checkout/:path*",
     "/favorites/:path*",
-    "/editor/:path*",
     "/admin/:path*",
     "/api/:path*"
   ]
