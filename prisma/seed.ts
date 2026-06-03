@@ -337,6 +337,7 @@ async function main(): Promise<void> {
     await prisma.productVariant.upsert({
       where: { sku: seed.variant.sku },
       update: {
+        productId: product.id,
         name: seed.variant.name,
         priceCents: seed.variant.priceCents,
         currency: "USD",
