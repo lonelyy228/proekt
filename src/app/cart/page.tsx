@@ -50,7 +50,15 @@ export default function CartPage(): JSX.Element {
         <h1 className="text-3xl font-semibold">Корзина</h1>
         <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6">
           <p className="font-medium text-destructive">Не удалось загрузить корзину.</p>
-          <p className="mt-2 text-sm text-muted-foreground">Попробуй обновить страницу или войти в аккаунт заново.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Попробуйте обновить страницу или войти в аккаунт заново.</p>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <Link href="/login" className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground">
+              Войти
+            </Link>
+            <Link href="/catalog" className="rounded-md border px-4 py-2 text-sm hover:bg-muted">
+              В каталог
+            </Link>
+          </div>
         </div>
       </div>
     );
@@ -95,14 +103,12 @@ export default function CartPage(): JSX.Element {
               <article key={item.id} className="grid gap-4 rounded-2xl border bg-card p-4 sm:grid-cols-[132px_1fr]">
                 <div className="flex h-32 items-center justify-center overflow-hidden rounded-xl border bg-muted/30">
                   {item.customizationPreviewUrl ? (
-                    <>
-                    {/* eslint-disable-next-line @next/next/no-img-element -- Data URL previews come from Fabric export and cannot be optimized by next/image. */}
+                    // eslint-disable-next-line @next/next/no-img-element -- Fabric previews are generated data URLs/object URLs.
                     <img
                       src={item.customizationPreviewUrl}
                       alt={`Превью ${item.productName}`}
                       className="h-full w-full object-contain"
                     />
-                    </>
                   ) : (
                     <span className="px-3 text-center text-xs text-muted-foreground">
                       {item.imageUrl ?? "RSH product"}
