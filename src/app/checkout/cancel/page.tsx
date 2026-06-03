@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
 export default function CheckoutCancelPage(): JSX.Element {
   return (
@@ -7,7 +7,7 @@ export default function CheckoutCancelPage(): JSX.Element {
         <p className="text-xs uppercase tracking-[0.22em] text-primary">RSH Checkout</p>
         <h1 className="mt-2 text-3xl font-semibold">Оплата отменена</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Платеж не был завершен. Содержимое корзины сохранено, вы можете вернуться и повторить попытку в любое время.
+          Платёж не был завершён. Содержимое корзины сохранено, можно вернуться и повторить попытку в любое время.
         </p>
       </div>
 
