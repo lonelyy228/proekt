@@ -12,12 +12,46 @@ import { productRepository } from "@/server/repositories/product-repository";
 import { prisma } from "@/lib/prisma";
 import { cartRepository } from "@/server/repositories/cart-repository";
 import type Stripe from "stripe";
+import { assertAllowedCheckoutReturnUrl } from "@/server/utils/checkout-return-url";
 
 const centsToStripeAmount = (amount: number): number => amount;
 const appendQuery = (url: string, key: string, value: string): string => {
   const separator = url.includes("?") ? "&" : "?";
   return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
 };
+
+const PLACEHOLDER_STRIPE_KEY_MARKERS = ["xxx", "mock", "dummy", "placeholder"];
+
+export const shouldUseLocalCheckoutFallback = (params: {
+  nodeEnv: "development" | "test" | "production";
+  stripeSecretKey: string;
+}): boolean => {
+  if (params.nodeEnv === "production") {
+    return false;
+  }
+
+  const normalizedKey = params.stripeSecretKey.trim().toLowerCase();
+  return PLACEHOLDER_STRIPE_KEY_MARKERS.some((marker) => normalizedKey.includes(marker));
+};
+
+const resolveCartCurrency = (items: Array<{ currency: string }>): string => {
+  const currencies = new Set(items.map((item) => item.currency.trim().toUpperCase()));
+
+  if (currencies.size !== 1) {
+    throw new AppError("VALIDATION_ERROR", "Cart contains items with mixed currencies");
+  }
+
+  const [currency] = [...currencies];
+
+  if (!currency || currency.length !== 3) {
+    throw new AppError("VALIDATION_ERROR", "Cart currency is invalid");
+  }
+
+  return currency;
+};
+
+const buildCheckoutSuccessUrl = (successUrl: string, orderId: string, sessionId: string): string =>
+  appendQuery(appendQuery(successUrl, "order_id", orderId), "session_id", sessionId);
 
 const validateCheckoutItemReferences = async (
   userId: string,
@@ -111,11 +145,17 @@ export const checkoutService = {
     shippingAddress: Record<string, unknown>;
     billingAddress?: Record<string, unknown>;
   }) => {
+    assertAllowedCheckoutReturnUrl(payload.successUrl);
+    assertAllowedCheckoutReturnUrl(payload.cancelUrl);
+
     const cart = await cartService.getCart(userId);
 
     if (cart.items.length === 0) {
       throw new AppError("VALIDATION_ERROR", "Cart is empty");
     }
+
+    const checkoutCurrency = resolveCartCurrency(cart.items);
+    const stripeCurrency = checkoutCurrency.toLowerCase();
 
     await Promise.all(
       cart.items.map((item) =>
@@ -139,7 +179,7 @@ export const checkoutService = {
       shippingCents,
       taxCents,
       totalCents,
-      currency: "USD",
+      currency: checkoutCurrency,
       shippingAddressJson: payload.shippingAddress as Prisma.InputJsonValue,
       billingAddressJson: payload.billingAddress as Prisma.InputJsonValue | undefined,
       items: {
@@ -149,31 +189,74 @@ export const checkoutService = {
           quantity: item.quantity,
           unitPriceCents: item.unitPriceCents,
           totalPriceCents: item.totalPriceCents,
-          currency: "USD",
+          currency: checkoutCurrency,
           customization: item.customizationId ? { connect: { id: item.customizationId } } : undefined
         }))
       }
     });
 
-    const session = await stripe.checkout.sessions.create({
-      mode: "payment",
-      success_url: appendQuery(appendQuery(payload.successUrl, "order_id", order.id), "session_id", "{CHECKOUT_SESSION_ID}"),
-      cancel_url: payload.cancelUrl,
-      line_items: cart.items.map((item) => ({
-        quantity: item.quantity,
-        price_data: {
-          currency: env.STRIPE_PRICE_CURRENCY,
-          unit_amount: centsToStripeAmount(item.unitPriceCents),
-          product_data: {
-            name: `${item.productName} - ${item.variantName}`
+    if (shouldUseLocalCheckoutFallback({ nodeEnv: env.NODE_ENV, stripeSecretKey: env.STRIPE_SECRET_KEY })) {
+      const localCheckoutId = `dev_checkout_${order.id}`;
+      await prisma.$transaction([
+        prisma.order.update({
+          where: { id: order.id },
+          data: {
+            status: OrderStatus.PAID,
+            stripeCheckoutId: localCheckoutId
           }
-        }
-      })),
-      metadata: {
+        }),
+        prisma.payment.create({
+          data: {
+            orderId: order.id,
+            provider: PaymentProvider.STRIPE,
+            status: PaymentStatus.SUCCEEDED,
+            amountCents: totalCents,
+            currency: checkoutCurrency,
+            stripePaymentIntentId: `dev_payment_${order.id}`,
+            providerPayload: {
+              mode: "local-checkout-fallback",
+              reason: "Stripe secret key is a non-production placeholder"
+            }
+          }
+        }),
+        cartRepository.clearByUserId(userId)
+      ]);
+
+      return {
+        checkoutUrl: buildCheckoutSuccessUrl(payload.successUrl, order.id, localCheckoutId),
         orderId: order.id,
-        userId
-      }
-    });
+        mode: "local" as const
+      };
+    }
+
+    let session: Stripe.Checkout.Session;
+
+    try {
+      session = await stripe.checkout.sessions.create({
+        mode: "payment",
+        success_url: buildCheckoutSuccessUrl(payload.successUrl, order.id, "{CHECKOUT_SESSION_ID}"),
+        cancel_url: payload.cancelUrl,
+        line_items: cart.items.map((item) => ({
+          quantity: item.quantity,
+          price_data: {
+            currency: stripeCurrency,
+            unit_amount: centsToStripeAmount(item.unitPriceCents),
+            product_data: {
+              name: `${item.productName} - ${item.variantName}`
+            }
+          }
+        })),
+        metadata: {
+          orderId: order.id,
+          userId
+        }
+      });
+    } catch (error: unknown) {
+      throw new AppError(
+        "EXTERNAL_PROVIDER_ERROR",
+        error instanceof Error ? `Stripe checkout failed: ${error.message}` : "Stripe checkout failed"
+      );
+    }
 
     await prisma.order.update({
       where: { id: order.id },
