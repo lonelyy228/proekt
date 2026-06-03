@@ -31,130 +31,416 @@ type SystemLayerData = {
 };
 
 const CANVAS_DIMENSION = 760;
-const GARMENT_IMAGE_TARGET_WIDTH = 620;
 const GRID_STEP = 20;
 const MAX_IMAGE_FILE_SIZE_BYTES = 8 * 1024 * 1024;
-
+const TEMPLATE_LINE_THRESHOLD = 96;
+const TEMPLATE_LINE_COLOR = 40;
 const GARMENT_TEMPLATES: Record<GarmentType, GarmentTemplate> = {
   TSHIRT: {
     code: "TSHIRT",
     label: "Футболка",
     technicalLabel: "Front",
     hint: "Печатная зона футболки",
-    printArea: { left: 274, top: 252, width: 212, height: 220 }
+    printArea: { left: 286, top: 282, width: 188, height: 224 }
   },
   HOODIE: {
     code: "HOODIE",
     label: "Худи",
     technicalLabel: "Front",
     hint: "Печатная зона худи",
-    printArea: { left: 258, top: 284, width: 244, height: 196 }
+    printArea: { left: 278, top: 302, width: 204, height: 230 }
   },
   SHORTS: {
     code: "SHORTS",
     label: "Шорты",
     technicalLabel: "Front",
     hint: "Печатная зона шорт",
-    printArea: { left: 266, top: 286, width: 228, height: 178 }
+    printArea: { left: 278, top: 292, width: 204, height: 170 }
   }
 };
-
 const GARMENT_OPTIONS: GarmentType[] = ["TSHIRT", "HOODIE", "SHORTS"];
-const GARMENT_COLORS = ["#111111", "#2b2b2b", "#5c564f", "#e8e5df", "#9b111e", "#1f3d72"];
+const GARMENT_COLORS = ["#e9e9e9", "#111111", "#2b2b2b", "#5c564f", "#9b111e", "#1f3d72"];
 const FONT_FAMILIES = ["Space Grotesk", "Arial", "Times New Roman", "Courier New", "Georgia"];
 const TEXT_COLORS = ["#111111", "#ffffff", "#d91b3a", "#214fce", "#0f8a5f", "#f29f05"];
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+type TemplateAsset = {
+  src: string;
+  crop: { x: number; y: number; width: number; height: number };
+  printAreaRatio: { left: number; top: number; width: number; height: number };
+  fillSeedRatios: Array<{ x: number; y: number }>;
+  maxWidth: number;
+  maxHeight: number;
+  layered?: {
+    base: string;
+    mask: string;
+    shadow: string;
+    lines: string;
+  };
+};
 
-const shadeColor = (hex: string, delta: number): string => {
+type RasterTemplateResult = {
+  dataUrl: string;
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+  printArea: PrintArea;
+};
+
+const TEMPLATE_ASSETS: Record<GarmentType, TemplateAsset> = {
+  TSHIRT: {
+    src: "/editor/templates/tshirt.jpg",
+    crop: { x: 0, y: 0, width: 0.39, height: 1 },
+    printAreaRatio: { left: 0.24, top: 0.22, width: 0.52, height: 0.58 },
+    fillSeedRatios: [
+      { x: 0.5, y: 0.52 },
+      { x: 0.24, y: 0.34 },
+      { x: 0.76, y: 0.34 }
+    ],
+    maxWidth: 460,
+    maxHeight: 500,
+    layered: {
+      base: "/editor/templates/layers/tshirt/tshirt-front-base.png",
+      mask: "/editor/templates/layers/tshirt/tshirt-front-mask.png",
+      shadow: "/editor/templates/layers/tshirt/tshirt-front-shadow.png",
+      lines: "/editor/templates/layers/tshirt/tshirt-front-lines.png"
+    }
+  },
+  HOODIE: {
+    src: "/editor/templates/hoodie.jpg",
+    crop: { x: 0, y: 0, width: 0.4, height: 1 },
+    printAreaRatio: { left: 0.24, top: 0.24, width: 0.52, height: 0.54 },
+    fillSeedRatios: [
+      { x: 0.5, y: 0.54 },
+      { x: 0.2, y: 0.6 },
+      { x: 0.8, y: 0.6 },
+      { x: 0.5, y: 0.18 }
+    ],
+    maxWidth: 500,
+    maxHeight: 560,
+    layered: {
+      base: "/editor/templates/layers/hoodie/hoodie-front-base.png",
+      mask: "/editor/templates/layers/hoodie/hoodie-front-mask.png",
+      shadow: "/editor/templates/layers/hoodie/hoodie-front-shadow.png",
+      lines: "/editor/templates/layers/hoodie/hoodie-front-lines.png"
+    }
+  },
+  SHORTS: {
+    src: "/editor/templates/shorts.jpg",
+    crop: { x: 0, y: 0, width: 0.52, height: 1 },
+    printAreaRatio: { left: 0.18, top: 0.22, width: 0.64, height: 0.54 },
+    fillSeedRatios: [
+      { x: 0.35, y: 0.5 },
+      { x: 0.65, y: 0.5 }
+    ],
+    maxWidth: 480,
+    maxHeight: 380,
+    layered: {
+      base: "/editor/templates/layers/shorts/shorts-front-base.png",
+      mask: "/editor/templates/layers/shorts/shorts-front-mask.png",
+      shadow: "/editor/templates/layers/shorts/shorts-front-shadow.png",
+      lines: "/editor/templates/layers/shorts/shorts-front-lines.png"
+    }
+  }
+};
+
+const imageCache = new Map<string, HTMLImageElement>();
+
+const parseHexColor = (hex: string): [number, number, number] => {
   const normalized = hex.replace("#", "");
 
   if (!/^[0-9a-fA-F]{6}$/.test(normalized)) {
-    return hex;
+    return [0, 0, 0];
   }
 
-  const makeHex = (channel: number): string => channel.toString(16).padStart(2, "0");
-
-  const r = clamp(parseInt(normalized.slice(0, 2), 16) + delta, 0, 255);
-  const g = clamp(parseInt(normalized.slice(2, 4), 16) + delta, 0, 255);
-  const b = clamp(parseInt(normalized.slice(4, 6), 16) + delta, 0, 255);
-
-  return `#${makeHex(r)}${makeHex(g)}${makeHex(b)}`;
+  return [parseInt(normalized.slice(0, 2), 16), parseInt(normalized.slice(2, 4), 16), parseInt(normalized.slice(4, 6), 16)];
 };
 
-const svgToDataUrl = (svg: string): string => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-
-const buildTshirtSvg = (color: string): string => {
-  const stroke = shadeColor(color, -50);
-  const shadow = shadeColor(color, -18);
-  const highlight = shadeColor(color, 26);
-
-  return `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 760">
-  <g>
-    <path d="M259 150 L321 124 L439 124 L501 150 L560 227 L528 273 L490 242 L490 592 Q490 616 466 616 L294 616 Q270 616 270 592 L270 242 L232 273 L200 227 Z"
-          fill="${color}" stroke="${stroke}" stroke-width="2.2" stroke-linejoin="round"/>
-    <path d="M321 124 Q380 180 439 124" fill="none" stroke="${stroke}" stroke-width="2"/>
-    <path d="M318 124 Q380 198 442 124" fill="none" stroke="${highlight}" stroke-width="1.5" opacity="0.5"/>
-    <path d="M270 260 L226 294 L208 252 L246 198 L270 212 Z" fill="${shadow}" opacity="0.42"/>
-    <path d="M490 260 L534 294 L552 252 L514 198 L490 212 Z" fill="${shadow}" opacity="0.42"/>
-    <path d="M270 592 L490 592" fill="none" stroke="${stroke}" stroke-width="2"/>
-  </g>
-</svg>`;
-};
-
-const buildHoodieSvg = (color: string): string => {
-  const stroke = shadeColor(color, -52);
-  const shadow = shadeColor(color, -18);
-  const cuff = shadeColor(color, -24);
-
-  return `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 760">
-  <g>
-    <path d="M235 212 L286 168 Q331 126 380 126 Q429 126 474 168 L525 212 L548 280 L512 312 L500 287 L500 598 Q500 620 478 620 L282 620 Q260 620 260 598 L260 287 L248 312 L212 280 Z"
-          fill="${color}" stroke="${stroke}" stroke-width="2.3" stroke-linejoin="round"/>
-    <path d="M286 168 Q380 248 474 168" fill="none" stroke="${stroke}" stroke-width="2"/>
-    <path d="M302 190 Q380 255 458 190" fill="none" stroke="${shadow}" stroke-width="1.4" opacity="0.75"/>
-    <path d="M248 282 L196 328 L176 278 L214 224 L254 232 Z" fill="${shadow}" opacity="0.46"/>
-    <path d="M512 282 L564 328 L584 278 L546 224 L506 232 Z" fill="${shadow}" opacity="0.46"/>
-    <rect x="311" y="414" width="138" height="88" rx="20" fill="${shadow}" opacity="0.42" stroke="${stroke}" stroke-width="1.2"/>
-    <path d="M350 242 L342 323" fill="none" stroke="${cuff}" stroke-width="3" stroke-linecap="round"/>
-    <path d="M410 242 L418 323" fill="none" stroke="${cuff}" stroke-width="3" stroke-linecap="round"/>
-    <path d="M260 620 L500 620" fill="none" stroke="${stroke}" stroke-width="2"/>
-  </g>
-</svg>`;
-};
-
-const buildShortsSvg = (color: string): string => {
-  const stroke = shadeColor(color, -52);
-  const shadow = shadeColor(color, -16);
-  const hem = shadeColor(color, -28);
-
-  return `
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 760">
-  <g>
-    <path d="M256 178 H504 Q526 178 530 200 L548 314 Q554 352 520 370 L492 384 L468 578 Q465 604 440 604 H320 Q295 604 292 578 L268 384 L240 370 Q206 352 212 314 L230 200 Q234 178 256 178 Z"
-          fill="${color}" stroke="${stroke}" stroke-width="2.3" stroke-linejoin="round"/>
-    <rect x="258" y="182" width="244" height="52" rx="16" fill="${shadow}" opacity="0.48"/>
-    <path d="M380 236 L368 376" fill="none" stroke="${stroke}" stroke-width="2"/>
-    <path d="M330 254 L316 336" fill="none" stroke="${hem}" stroke-width="2.4" stroke-linecap="round"/>
-    <path d="M430 254 L444 336" fill="none" stroke="${hem}" stroke-width="2.4" stroke-linecap="round"/>
-    <path d="M292 578 H468" fill="none" stroke="${stroke}" stroke-width="2"/>
-  </g>
-</svg>`;
-};
-
-const buildGarmentSvg = (garmentType: GarmentType, color: string): string => {
-  if (garmentType === "TSHIRT") {
-    return buildTshirtSvg(color);
+const loadHtmlImage = async (src: string): Promise<HTMLImageElement> => {
+  const cached = imageCache.get(src);
+  if (cached) {
+    return cached;
   }
 
-  if (garmentType === "HOODIE") {
-    return buildHoodieSvg(color);
+  const loaded = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const image = new Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error(`Failed to load template image: ${src}`));
+    image.src = src;
+  });
+
+  imageCache.set(src, loaded);
+  return loaded;
+};
+
+const buildRasterTemplate = async (garmentType: GarmentType, garmentColor: string): Promise<RasterTemplateResult> => {
+  const asset = TEMPLATE_ASSETS[garmentType];
+  const [colorR, colorG, colorB] = parseHexColor(garmentColor);
+
+  if (asset.layered) {
+    const [baseImage, maskImage, shadowImage, linesImage] = await Promise.all([
+      loadHtmlImage(asset.layered.base),
+      loadHtmlImage(asset.layered.mask),
+      loadHtmlImage(asset.layered.shadow),
+      loadHtmlImage(asset.layered.lines)
+    ]);
+
+    const sourceCanvas = document.createElement("canvas");
+    sourceCanvas.width = baseImage.width;
+    sourceCanvas.height = baseImage.height;
+    const sourceContext = sourceCanvas.getContext("2d");
+
+    if (!sourceContext) {
+      throw new Error("No 2d context for layered template render");
+    }
+
+    sourceContext.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
+    sourceContext.drawImage(maskImage, 0, 0, sourceCanvas.width, sourceCanvas.height);
+
+    const tintData = sourceContext.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+    const tintPixels = tintData.data;
+    let minX = sourceCanvas.width;
+    let minY = sourceCanvas.height;
+    let maxX = 0;
+    let maxY = 0;
+
+    for (let index = 0; index < tintPixels.length; index += 4) {
+      const alpha = tintPixels[index + 3];
+      const maskLuminance = (tintPixels[index] + tintPixels[index + 1] + tintPixels[index + 2]) / 3;
+
+      if (alpha < 32 || maskLuminance < 192) {
+        tintPixels[index + 3] = 0;
+        continue;
+      }
+
+      const pixelPosition = index / 4;
+      const x = pixelPosition % sourceCanvas.width;
+      const y = Math.floor(pixelPosition / sourceCanvas.width);
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+
+      tintPixels[index] = colorR;
+      tintPixels[index + 1] = colorG;
+      tintPixels[index + 2] = colorB;
+      tintPixels[index + 3] = 255;
+    }
+    sourceContext.putImageData(tintData, 0, 0);
+
+    if (maxX <= minX || maxY <= minY) {
+      minX = 0;
+      minY = 0;
+      maxX = sourceCanvas.width - 1;
+      maxY = sourceCanvas.height - 1;
+    }
+
+    sourceContext.globalCompositeOperation = "multiply";
+    sourceContext.drawImage(shadowImage, 0, 0, sourceCanvas.width, sourceCanvas.height);
+    sourceContext.globalCompositeOperation = "source-over";
+    sourceContext.drawImage(linesImage, 0, 0, sourceCanvas.width, sourceCanvas.height);
+
+    const padding = 140;
+    const cropX = clamp(minX - padding, 0, sourceCanvas.width - 1);
+    const cropY = clamp(minY - padding, 0, sourceCanvas.height - 1);
+    const cropWidth = clamp(maxX - minX + 1 + padding * 2, 1, sourceCanvas.width - cropX);
+    const cropHeight = clamp(maxY - minY + 1 + padding * 2, 1, sourceCanvas.height - cropY);
+
+    const scale = Math.min(asset.maxWidth / cropWidth, asset.maxHeight / cropHeight);
+    const renderWidth = Math.max(1, Math.round(cropWidth * scale));
+    const renderHeight = Math.max(1, Math.round(cropHeight * scale));
+
+    const offscreen = document.createElement("canvas");
+    offscreen.width = renderWidth;
+    offscreen.height = renderHeight;
+    const context = offscreen.getContext("2d");
+
+    if (!context) {
+      throw new Error("No 2d context for normalized template render");
+    }
+
+    context.drawImage(sourceCanvas, cropX, cropY, cropWidth, cropHeight, 0, 0, renderWidth, renderHeight);
+
+    const left = Math.round((CANVAS_DIMENSION - renderWidth) / 2);
+    const top = Math.max(48, Math.round((CANVAS_DIMENSION - renderHeight) / 2) - 36);
+    const printArea: PrintArea = {
+      left: left + Math.round(renderWidth * asset.printAreaRatio.left),
+      top: top + Math.round(renderHeight * asset.printAreaRatio.top),
+      width: Math.round(renderWidth * asset.printAreaRatio.width),
+      height: Math.round(renderHeight * asset.printAreaRatio.height)
+    };
+
+    return {
+      dataUrl: offscreen.toDataURL("image/png"),
+      left,
+      top,
+      width: renderWidth,
+      height: renderHeight,
+      printArea
+    };
   }
 
-  return buildShortsSvg(color);
+  const source = await loadHtmlImage(asset.src);
+
+  const cropX = Math.floor(source.width * asset.crop.x);
+  const cropY = Math.floor(source.height * asset.crop.y);
+  const cropWidth = Math.max(1, Math.floor(source.width * asset.crop.width));
+  const cropHeight = Math.max(1, Math.floor(source.height * asset.crop.height));
+
+  const scale = Math.min(asset.maxWidth / cropWidth, asset.maxHeight / cropHeight);
+  const renderWidth = Math.max(1, Math.round(cropWidth * scale));
+  const renderHeight = Math.max(1, Math.round(cropHeight * scale));
+
+  const offscreen = document.createElement("canvas");
+  offscreen.width = renderWidth;
+  offscreen.height = renderHeight;
+  const context = offscreen.getContext("2d");
+
+  if (!context) {
+    throw new Error("No 2d context for template render");
+  }
+
+  context.drawImage(source, cropX, cropY, cropWidth, cropHeight, 0, 0, renderWidth, renderHeight);
+  const fullWidth = renderWidth;
+  const fullHeight = renderHeight;
+  const trimmedData = context.getImageData(0, 0, fullWidth, fullHeight);
+  const pixels = trimmedData.data;
+
+  const lineThreshold = TEMPLATE_LINE_THRESHOLD;
+  const mask = new Uint8Array(fullWidth * fullHeight);
+  const colorTolerance = 32;
+  const maxReachPixels = fullWidth * fullHeight * 0.72;
+  let reachedPixels = 0;
+
+  for (const seed of asset.fillSeedRatios) {
+    const seedX = clamp(Math.round(fullWidth * seed.x), 0, fullWidth - 1);
+    const seedY = clamp(Math.round(fullHeight * seed.y), 0, fullHeight - 1);
+    const seedIndex = (seedY * fullWidth + seedX) * 4;
+    const seedR = pixels[seedIndex];
+    const seedG = pixels[seedIndex + 1];
+    const seedB = pixels[seedIndex + 2];
+
+    const visited = new Uint8Array(fullWidth * fullHeight);
+    const stack: number[] = [seedY * fullWidth + seedX];
+
+    while (stack.length > 0 && reachedPixels < maxReachPixels) {
+      const current = stack.pop();
+      if (current === undefined || visited[current] === 1) {
+        continue;
+      }
+
+      visited[current] = 1;
+      const currentX = current % fullWidth;
+      const currentY = Math.floor(current / fullWidth);
+      const currentPixel = current * 4;
+
+      const red = pixels[currentPixel];
+      const green = pixels[currentPixel + 1];
+      const blue = pixels[currentPixel + 2];
+      const alpha = pixels[currentPixel + 3];
+      const luminance = (red + green + blue) / 3;
+
+      if (alpha === 0 || luminance <= lineThreshold) {
+        continue;
+      }
+
+      const distance = Math.sqrt((red - seedR) ** 2 + (green - seedG) ** 2 + (blue - seedB) ** 2);
+      if (distance > colorTolerance) {
+        continue;
+      }
+
+      if (mask[current] === 0) {
+        mask[current] = 1;
+        reachedPixels += 1;
+      }
+
+      if (currentX > 0) stack.push(current - 1);
+      if (currentX < fullWidth - 1) stack.push(current + 1);
+      if (currentY > 0) stack.push(current - fullWidth);
+      if (currentY < fullHeight - 1) stack.push(current + fullWidth);
+    }
+  }
+
+  for (let index = 0; index < pixels.length; index += 4) {
+    const red = pixels[index];
+    const green = pixels[index + 1];
+    const blue = pixels[index + 2];
+    const alpha = pixels[index + 3];
+
+    if (alpha === 0) {
+      continue;
+    }
+
+    const luminance = (red + green + blue) / 3;
+    if (luminance <= lineThreshold) {
+      pixels[index] = TEMPLATE_LINE_COLOR;
+      pixels[index + 1] = TEMPLATE_LINE_COLOR;
+      pixels[index + 2] = TEMPLATE_LINE_COLOR;
+      pixels[index + 3] = 232;
+      continue;
+    }
+
+    const pixelPosition = index / 4;
+    if (mask[pixelPosition] === 0) {
+      pixels[index + 3] = 0;
+      continue;
+    }
+
+    pixels[index] = colorR;
+    pixels[index + 1] = colorG;
+    pixels[index + 2] = colorB;
+    pixels[index + 3] = 255;
+  }
+
+  const safeMinX = 0;
+  const safeMinY = 0;
+  const trimmedWidth = fullWidth;
+  const trimmedHeight = fullHeight;
+
+  context.putImageData(trimmedData, 0, 0);
+
+  const preparedCanvas = document.createElement("canvas");
+  preparedCanvas.width = trimmedWidth;
+  preparedCanvas.height = trimmedHeight;
+  const preparedContext = preparedCanvas.getContext("2d");
+
+  if (!preparedContext) {
+    throw new Error("No 2d context for prepared template render");
+  }
+
+  preparedContext.drawImage(
+    offscreen,
+    safeMinX,
+    safeMinY,
+    trimmedWidth,
+    trimmedHeight,
+    0,
+    0,
+    trimmedWidth,
+    trimmedHeight
+  );
+
+  const left = Math.round((CANVAS_DIMENSION - trimmedWidth) / 2);
+  const top = Math.max(40, Math.round((CANVAS_DIMENSION - trimmedHeight) / 2));
+  const printArea: PrintArea = {
+    left: left + Math.round(trimmedWidth * asset.printAreaRatio.left),
+    top: top + Math.round(trimmedHeight * asset.printAreaRatio.top),
+    width: Math.round(trimmedWidth * asset.printAreaRatio.width),
+    height: Math.round(trimmedHeight * asset.printAreaRatio.height)
+  };
+
+  return {
+    dataUrl: preparedCanvas.toDataURL("image/png"),
+    left,
+    top,
+    width: trimmedWidth,
+    height: trimmedHeight,
+    printArea
+  };
 };
+
 
 const tagSystemLayer = <T extends FabricObject>(object: T): T => {
   const extended = object as T & { data?: SystemLayerData };
@@ -237,13 +523,19 @@ export const EditorCanvas = (): JSX.Element => {
   const [fontFamily, setFontFamily] = useState<string>(FONT_FAMILIES[0]);
   const [textColor, setTextColor] = useState<string>(TEXT_COLORS[0]);
   const [textValue, setTextValue] = useState<string>("RSH custom");
-  const [showGrid, setShowGrid] = useState<boolean>(true);
+  const [showGrid, setShowGrid] = useState<boolean>(false);
   const [snapToGridEnabled, setSnapToGridEnabled] = useState<boolean>(true);
   const [imageUrlInput, setImageUrlInput] = useState<string>("");
   const [layers, setLayers] = useState<LayerItem[]>([]);
   const [statusMessage, setStatusMessage] = useState<string>("");
+  const [activePrintArea, setActivePrintArea] = useState<PrintArea>(GARMENT_TEMPLATES.TSHIRT.printArea);
 
   const template = useMemo(() => GARMENT_TEMPLATES[garmentType], [garmentType]);
+  const printAreaRef = useRef<PrintArea>(activePrintArea);
+
+  useEffect(() => {
+    printAreaRef.current = activePrintArea;
+  }, [activePrintArea]);
 
   const getEditableObjects = useCallback((canvas: Canvas): FabricObject[] => {
     return canvas
@@ -276,91 +568,36 @@ export const EditorCanvas = (): JSX.Element => {
         .filter((object) => isSystemLayer(object))
         .forEach((object) => canvas.remove(object));
 
-      const templateSvg = buildGarmentSvg(garmentType, garmentColor);
-      const garmentImage = await FabricImage.fromURL(svgToDataUrl(templateSvg));
+      const rasterTemplate = await buildRasterTemplate(garmentType, garmentColor);
 
       if (nonce !== renderNonceRef.current) {
         return;
       }
 
-      garmentImage.scaleToWidth(GARMENT_IMAGE_TARGET_WIDTH);
+      const garmentImage = await FabricImage.fromURL(rasterTemplate.dataUrl);
+
+      if (nonce !== renderNonceRef.current) {
+        return;
+      }
+
       garmentImage.set({
-        left: (CANVAS_DIMENSION - getScaledObjectWidth(garmentImage)) / 2,
-        top: 86,
+        left: rasterTemplate.left,
+        top: rasterTemplate.top,
+        originX: "left",
+        originY: "top",
         objectCaching: true
       });
 
       const garmentLayer = tagSystemLayer(garmentImage);
-
-      const printAreaLayer = tagSystemLayer(
-        new Rect({
-          left: template.printArea.left,
-          top: template.printArea.top,
-          width: template.printArea.width,
-          height: template.printArea.height,
-          fill: "rgba(255,255,255,0.16)",
-          stroke: "rgba(20,20,20,0.72)",
-          strokeDashArray: [8, 6],
-          strokeWidth: 2
-        })
-      );
-
-      const hintLayer = tagSystemLayer(
-        new Textbox(template.hint, {
-          left: template.printArea.left + 8,
-          top: template.printArea.top + 8,
-          width: template.printArea.width - 16,
-          fontSize: 12,
-          fill: "#111111",
-          textAlign: "center"
-        })
-      );
-
       canvas.add(garmentLayer);
+      canvas.sendObjectToBack(garmentLayer);
 
-      if (showGrid) {
-        for (let x = template.printArea.left; x <= template.printArea.left + template.printArea.width; x += GRID_STEP) {
-          canvas.add(
-            tagSystemLayer(
-              new Rect({
-                left: x,
-                top: template.printArea.top,
-                width: 1,
-                height: template.printArea.height,
-                fill: "rgba(0,0,0,0.08)",
-                strokeWidth: 0
-              })
-            )
-          );
-        }
-
-        for (let y = template.printArea.top; y <= template.printArea.top + template.printArea.height; y += GRID_STEP) {
-          canvas.add(
-            tagSystemLayer(
-              new Rect({
-                left: template.printArea.left,
-                top: y,
-                width: template.printArea.width,
-                height: 1,
-                fill: "rgba(0,0,0,0.08)",
-                strokeWidth: 0
-              })
-            )
-          );
-        }
-      }
-
-      canvas.add(printAreaLayer);
-      canvas.add(hintLayer);
-
-      canvas
-        .getObjects()
-        .filter((object) => isSystemLayer(object))
-        .forEach((object) => canvas.sendObjectToBack(object));
+      setActivePrintArea(rasterTemplate.printArea);
+      printAreaRef.current = rasterTemplate.printArea;
 
       canvas.requestRenderAll();
     },
-    [garmentColor, garmentType, showGrid, template]
+    [garmentColor, garmentType]
   );
 
   useEffect(() => {
@@ -381,7 +618,7 @@ export const EditorCanvas = (): JSX.Element => {
         return;
       }
 
-      constrainInsidePrintArea(target, template.printArea, snapToGridEnabled);
+      constrainInsidePrintArea(target, printAreaRef.current, snapToGridEnabled);
     });
 
     canvas.on("object:scaling", (event) => {
@@ -390,7 +627,7 @@ export const EditorCanvas = (): JSX.Element => {
         return;
       }
 
-      constrainInsidePrintArea(target, template.printArea, false);
+      constrainInsidePrintArea(target, printAreaRef.current, false);
     });
 
     canvas.on("object:added", refreshLayers);
@@ -404,18 +641,16 @@ export const EditorCanvas = (): JSX.Element => {
       canvas.dispose();
       fabricRef.current = null;
     };
-  }, [repaintTemplate, refreshLayers, snapToGridEnabled, template.printArea]);
+  }, [repaintTemplate, refreshLayers, snapToGridEnabled]);
 
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) {
       return;
     }
-
-    void repaintTemplate(canvas).then(() => {
-      refreshLayers();
-    });
-  }, [garmentType, garmentColor, showGrid, repaintTemplate, refreshLayers]);
+    void repaintTemplate(canvas);
+    refreshLayers();
+  }, [garmentType, garmentColor, repaintTemplate, refreshLayers]);
 
   const addText = (): void => {
     const canvas = fabricRef.current;
@@ -424,9 +659,9 @@ export const EditorCanvas = (): JSX.Element => {
     }
 
     const text = new Textbox(textValue.trim() || "RSH custom", {
-      left: template.printArea.left + 18,
-      top: template.printArea.top + 18,
-      width: template.printArea.width - 36,
+      left: activePrintArea.left + 18,
+      top: activePrintArea.top + 18,
+      width: activePrintArea.width - 36,
       fontSize: 34,
       fill: textColor,
       fontFamily,
@@ -435,7 +670,7 @@ export const EditorCanvas = (): JSX.Element => {
 
     canvas.add(text);
     canvas.setActiveObject(text);
-    constrainInsidePrintArea(text, template.printArea, snapToGridEnabled);
+    constrainInsidePrintArea(text, activePrintArea, snapToGridEnabled);
     canvas.requestRenderAll();
     setStatusMessage("Текст добавлен.");
   };
@@ -446,8 +681,8 @@ export const EditorCanvas = (): JSX.Element => {
       return;
     }
 
-    const maxWidth = template.printArea.width * 0.78;
-    const maxHeight = template.printArea.height * 0.78;
+    const maxWidth = activePrintArea.width * 0.78;
+    const maxHeight = activePrintArea.height * 0.78;
 
     if ((image.width ?? 0) > (image.height ?? 0)) {
       image.scaleToWidth(maxWidth);
@@ -456,14 +691,14 @@ export const EditorCanvas = (): JSX.Element => {
     }
 
     image.set({
-      left: template.printArea.left + 14,
-      top: template.printArea.top + 14,
+      left: activePrintArea.left + 14,
+      top: activePrintArea.top + 14,
       objectCaching: true
     });
 
     canvas.add(image);
     canvas.setActiveObject(image);
-    constrainInsidePrintArea(image, template.printArea, snapToGridEnabled);
+    constrainInsidePrintArea(image, activePrintArea, snapToGridEnabled);
     canvas.requestRenderAll();
   };
 
@@ -522,7 +757,7 @@ export const EditorCanvas = (): JSX.Element => {
     }
 
     selected.set("angle", (selected.angle ?? 0) + angleDelta);
-    constrainInsidePrintArea(selected, template.printArea, false);
+    constrainInsidePrintArea(selected, activePrintArea, false);
     canvas.requestRenderAll();
   };
 
@@ -538,7 +773,7 @@ export const EditorCanvas = (): JSX.Element => {
     const nextScaleY = clamp((selected.scaleY ?? 1) + delta, 0.1, 4);
 
     selected.set({ scaleX: nextScaleX, scaleY: nextScaleY });
-    constrainInsidePrintArea(selected, template.printArea, false);
+    constrainInsidePrintArea(selected, activePrintArea, false);
     canvas.requestRenderAll();
   };
 
@@ -689,7 +924,7 @@ export const EditorCanvas = (): JSX.Element => {
         </div>
       </section>
 
-      <section className="grid gap-4 rounded-xl border bg-card p-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+      <section className="grid gap-4 rounded-xl border bg-card p-4 lg:grid-cols-[minmax(0,1fr)_300px]">
         <div className="space-y-3">
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={addText} className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground">
