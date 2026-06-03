@@ -56,7 +56,15 @@ export const cartRepository = {
       });
     }),
 
-  removeItem: (itemId: string) => prisma.cartItem.delete({ where: { id: itemId } }),
+  removeItem: (userId: string, itemId: string) =>
+    prisma.cartItem.deleteMany({
+      where: {
+        id: itemId,
+        cart: {
+          userId
+        }
+      }
+    }),
   clearByUserId: (userId: string) =>
     prisma.cartItem.deleteMany({
       where: {

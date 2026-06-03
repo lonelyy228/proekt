@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, FabricImage, FabricObject, Rect, Textbox } from "fabric";
+import Link from "next/link";
 import { ensureCsrfToken } from "@/lib/csrf-client";
 import { formatStoreMoney } from "@/lib/currency";
 
@@ -9,6 +10,11 @@ type GarmentType = "TSHIRT" | "HOODIE" | "SHORTS";
 
 type LayerItem = {
   layerPosition: number;
+  label: string;
+};
+
+type StatusAction = {
+  href: string;
   label: string;
 };
 
@@ -38,6 +44,7 @@ type ApiEnvelope<T> = {
   success: boolean;
   data?: T;
   error?: {
+    code?: string;
     message?: string;
   };
 };
@@ -559,6 +566,7 @@ export const EditorCanvas = (): JSX.Element => {
   const [imageUrlInput, setImageUrlInput] = useState<string>("");
   const [layers, setLayers] = useState<LayerItem[]>([]);
   const [statusMessage, setStatusMessage] = useState<string>("");
+  const [statusAction, setStatusAction] = useState<StatusAction | null>(null);
   const [activePrintArea, setActivePrintArea] = useState<PrintArea>(GARMENT_TEMPLATES.TSHIRT.printArea);
   const [customizerProducts, setCustomizerProducts] = useState<CustomizerProduct[]>([]);
   const [selectedProductId, setSelectedProductId] = useState<string>("");
@@ -566,6 +574,10 @@ export const EditorCanvas = (): JSX.Element => {
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
   const template = useMemo(() => GARMENT_TEMPLATES[garmentType], [garmentType]);
+  const setEditorStatus = useCallback((message: string): void => {
+    setStatusAction(null);
+    setStatusMessage(message);
+  }, []);
   const productsForGarment = useMemo(
     () => customizerProducts.filter((product) => product.garmentType === garmentType && product.variants.length > 0),
     [customizerProducts, garmentType]
@@ -604,7 +616,7 @@ export const EditorCanvas = (): JSX.Element => {
         }
       } catch {
         if (mounted) {
-          setStatusMessage("Не удалось загрузить базовые вещи RSH BASICS для корзины.");
+          setEditorStatus("Не удалось загрузить базовые вещи RSH BASICS для корзины.");
         }
       }
     };
@@ -614,7 +626,7 @@ export const EditorCanvas = (): JSX.Element => {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [setEditorStatus]);
 
   useEffect(() => {
     const firstProduct = productsForGarment[0];
@@ -777,7 +789,7 @@ export const EditorCanvas = (): JSX.Element => {
     canvas.setActiveObject(text);
     constrainInsidePrintArea(text, activePrintArea, snapToGridEnabled);
     canvas.requestRenderAll();
-    setStatusMessage("Текст добавлен.");
+    setEditorStatus("Текст добавлен.");
   };
 
   const placeImage = (image: FabricImage): void => {
@@ -815,13 +827,13 @@ export const EditorCanvas = (): JSX.Element => {
     }
 
     if (!file.type.startsWith("image/")) {
-      setStatusMessage("Поддерживаются только изображения.");
+      setEditorStatus("Поддерживаются только изображения.");
       event.target.value = "";
       return;
     }
 
     if (file.size > MAX_IMAGE_FILE_SIZE_BYTES) {
-      setStatusMessage("Файл слишком большой. Лимит: 8 МБ.");
+      setEditorStatus("Файл слишком большой. Лимит: 8 МБ.");
       event.target.value = "";
       return;
     }
@@ -830,9 +842,9 @@ export const EditorCanvas = (): JSX.Element => {
       const dataUrl = await fileToDataUrl(file);
       const image = await FabricImage.fromURL(dataUrl);
       placeImage(image);
-      setStatusMessage(`Фото «${file.name}» добавлено.`);
+      setEditorStatus(`Фото «${file.name}» добавлено.`);
     } catch {
-      setStatusMessage("Не удалось загрузить фото с устройства.");
+      setEditorStatus("Не удалось загрузить фото с устройства.");
     } finally {
       event.target.value = "";
     }
@@ -847,9 +859,9 @@ export const EditorCanvas = (): JSX.Element => {
       const image = await FabricImage.fromURL(imageUrlInput.trim(), { crossOrigin: "anonymous" });
       placeImage(image);
       setImageUrlInput("");
-      setStatusMessage("Фото по ссылке добавлено.");
+      setEditorStatus("Фото по ссылке добавлено.");
     } catch {
-      setStatusMessage("Не удалось загрузить фото по ссылке. Проверь URL и CORS на источнике.");
+      setEditorStatus("Не удалось загрузить фото по ссылке. Проверь URL и CORS на источнике.");
     }
   };
 
@@ -910,7 +922,7 @@ export const EditorCanvas = (): JSX.Element => {
 
     canvas.remove(selected);
     canvas.requestRenderAll();
-    setStatusMessage("Слой удалён.");
+    setEditorStatus("Слой удалён.");
   };
 
   const selectLayer = (layerPosition: number): void => {
@@ -958,7 +970,10 @@ export const EditorCanvas = (): JSX.Element => {
     });
 
     if (!response.ok) {
-      throw new Error(response.status === 401 ? "auth-required" : "failed-save");
+      const errorPayload = (await response.json().catch(() => null)) as ApiEnvelope<unknown> | null;
+      const errorCode = errorPayload?.error?.code;
+      const authLikeError = response.status === 401 || response.status === 403 || errorCode === "AUTH_ERROR" || errorCode === "FORBIDDEN";
+      throw new Error(authLikeError ? "auth-required" : "failed-save");
     }
 
     const payload = (await response.json()) as ApiEnvelope<{ id: string }>;
@@ -971,13 +986,18 @@ export const EditorCanvas = (): JSX.Element => {
 
   const saveDesign = async (): Promise<void> => {
     setIsSaving(true);
-    setStatusMessage("Сохраняем дизайн...");
+    setEditorStatus("Сохраняем дизайн...");
 
     try {
       await createDesignRequest();
       setStatusMessage("Дизайн сохранён в профиль.");
-    } catch {
-      setStatusMessage("Не удалось сохранить дизайн. Войдите в аккаунт и повторите.");
+      setStatusAction({ href: "/profile", label: "Открыть профиль" });
+    } catch (error: unknown) {
+      const requiresAuth = error instanceof Error && error.message === "auth-required";
+      setStatusMessage(
+        requiresAuth ? "Чтобы сохранить дизайн в профиль, нужно войти в аккаунт." : "Не удалось сохранить дизайн. Попробуй ещё раз."
+      );
+      setStatusAction(requiresAuth ? { href: "/login?next=/editor", label: "Войти и сохранить" } : null);
     } finally {
       setIsSaving(false);
     }
@@ -985,12 +1005,12 @@ export const EditorCanvas = (): JSX.Element => {
 
   const saveDesignAndAddToCart = async (): Promise<void> => {
     if (!selectedProduct || !selectedVariant) {
-      setStatusMessage("Для этого макета пока нет активной базы RSH BASICS в каталоге.");
+      setEditorStatus("Для этого макета пока нет активной базы RSH BASICS в каталоге.");
       return;
     }
 
     setIsSaving(true);
-    setStatusMessage("Сохраняем дизайн и добавляем вещь в корзину...");
+    setEditorStatus("Сохраняем дизайн и добавляем вещь в корзину...");
 
     try {
       const designId = await createDesignRequest();
@@ -1015,8 +1035,15 @@ export const EditorCanvas = (): JSX.Element => {
       }
 
       setStatusMessage("Готово: кастомная вещь добавлена в корзину.");
-    } catch {
-      setStatusMessage("Не удалось добавить в корзину. Войдите в аккаунт и повторите.");
+      setStatusAction({ href: "/cart", label: "Открыть корзину" });
+    } catch (error: unknown) {
+      const requiresAuth = error instanceof Error && error.message === "auth-required";
+      setStatusMessage(
+        requiresAuth
+          ? "Чтобы добавить кастомную вещь в корзину, нужно войти в аккаунт."
+          : "Не удалось добавить кастомную вещь в корзину. Попробуй ещё раз."
+      );
+      setStatusAction(requiresAuth ? { href: "/login?next=/editor", label: "Войти и повторить" } : null);
     } finally {
       setIsSaving(false);
     }
@@ -1243,7 +1270,16 @@ export const EditorCanvas = (): JSX.Element => {
             >
               Сохранить и добавить в корзину
             </button>
-            {statusMessage ? <p className="text-sm text-muted-foreground">{statusMessage}</p> : null}
+            {statusMessage ? (
+              <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-background px-3 py-2">
+                <p className="text-sm text-muted-foreground">{statusMessage}</p>
+                {statusAction ? (
+                  <Link href={statusAction.href} className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground">
+                    {statusAction.label}
+                  </Link>
+                ) : null}
+              </div>
+            ) : null}
           </div>
         </div>
 

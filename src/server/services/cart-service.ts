@@ -102,7 +102,11 @@ export const cartService = {
   },
 
   removeItem: async (userId: string, itemId: string) => {
-    await cartRepository.removeItem(itemId);
+    const result = await cartRepository.removeItem(userId, itemId);
+    if (result.count === 0) {
+      throw new AppError("NOT_FOUND", "Cart item not found");
+    }
+
     return cartService.getCart(userId);
   },
 
