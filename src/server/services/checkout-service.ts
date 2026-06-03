@@ -12,11 +12,28 @@ import { productRepository } from "@/server/repositories/product-repository";
 import { prisma } from "@/lib/prisma";
 import { cartRepository } from "@/server/repositories/cart-repository";
 import type Stripe from "stripe";
+import { assertAllowedCheckoutReturnUrl } from "@/server/utils/checkout-return-url";
 
 const centsToStripeAmount = (amount: number): number => amount;
 const appendQuery = (url: string, key: string, value: string): string => {
   const separator = url.includes("?") ? "&" : "?";
   return `${url}${separator}${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+};
+
+const resolveCartCurrency = (items: Array<{ currency: string }>): string => {
+  const currencies = new Set(items.map((item) => item.currency.trim().toUpperCase()));
+
+  if (currencies.size !== 1) {
+    throw new AppError("VALIDATION_ERROR", "Cart contains items with mixed currencies");
+  }
+
+  const [currency] = [...currencies];
+
+  if (!currency || currency.length !== 3) {
+    throw new AppError("VALIDATION_ERROR", "Cart currency is invalid");
+  }
+
+  return currency;
 };
 
 const validateCheckoutItemReferences = async (
@@ -111,11 +128,17 @@ export const checkoutService = {
     shippingAddress: Record<string, unknown>;
     billingAddress?: Record<string, unknown>;
   }) => {
+    assertAllowedCheckoutReturnUrl(payload.successUrl);
+    assertAllowedCheckoutReturnUrl(payload.cancelUrl);
+
     const cart = await cartService.getCart(userId);
 
     if (cart.items.length === 0) {
       throw new AppError("VALIDATION_ERROR", "Cart is empty");
     }
+
+    const checkoutCurrency = resolveCartCurrency(cart.items);
+    const stripeCurrency = checkoutCurrency.toLowerCase();
 
     await Promise.all(
       cart.items.map((item) =>
@@ -139,7 +162,7 @@ export const checkoutService = {
       shippingCents,
       taxCents,
       totalCents,
-      currency: "USD",
+      currency: checkoutCurrency,
       shippingAddressJson: payload.shippingAddress as Prisma.InputJsonValue,
       billingAddressJson: payload.billingAddress as Prisma.InputJsonValue | undefined,
       items: {
@@ -149,7 +172,7 @@ export const checkoutService = {
           quantity: item.quantity,
           unitPriceCents: item.unitPriceCents,
           totalPriceCents: item.totalPriceCents,
-          currency: "USD",
+          currency: checkoutCurrency,
           customization: item.customizationId ? { connect: { id: item.customizationId } } : undefined
         }))
       }
@@ -162,7 +185,7 @@ export const checkoutService = {
       line_items: cart.items.map((item) => ({
         quantity: item.quantity,
         price_data: {
-          currency: env.STRIPE_PRICE_CURRENCY,
+          currency: stripeCurrency,
           unit_amount: centsToStripeAmount(item.unitPriceCents),
           product_data: {
             name: `${item.productName} - ${item.variantName}`
