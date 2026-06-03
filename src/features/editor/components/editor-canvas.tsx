@@ -1,14 +1,45 @@
-"use client";
+﻿"use client";
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, FabricImage, FabricObject, Rect, Textbox } from "fabric";
 import { ensureCsrfToken } from "@/lib/csrf-client";
+import { formatStoreMoney } from "@/lib/currency";
 
 type GarmentType = "TSHIRT" | "HOODIE" | "SHORTS";
 
 type LayerItem = {
   layerPosition: number;
   label: string;
+};
+
+type CustomizerVariant = {
+  id: string;
+  name: string;
+  sku: string;
+  color: string;
+  size: string;
+  priceCents: number;
+  currency: string;
+  isDefault: boolean;
+};
+
+type CustomizerProduct = {
+  id: string;
+  slug: string;
+  brand: string;
+  name: string;
+  garmentType: GarmentType | "SWEATSHIRT" | "PANTS";
+  basePriceCents: number;
+  currency: string;
+  variants: CustomizerVariant[];
+};
+
+type ApiEnvelope<T> = {
+  success: boolean;
+  data?: T;
+  error?: {
+    message?: string;
+  };
 };
 
 type PrintArea = {
@@ -529,13 +560,81 @@ export const EditorCanvas = (): JSX.Element => {
   const [layers, setLayers] = useState<LayerItem[]>([]);
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [activePrintArea, setActivePrintArea] = useState<PrintArea>(GARMENT_TEMPLATES.TSHIRT.printArea);
+  const [customizerProducts, setCustomizerProducts] = useState<CustomizerProduct[]>([]);
+  const [selectedProductId, setSelectedProductId] = useState<string>("");
+  const [selectedVariantId, setSelectedVariantId] = useState<string>("");
+  const [isSaving, setIsSaving] = useState<boolean>(false);
 
   const template = useMemo(() => GARMENT_TEMPLATES[garmentType], [garmentType]);
+  const productsForGarment = useMemo(
+    () => customizerProducts.filter((product) => product.garmentType === garmentType && product.variants.length > 0),
+    [customizerProducts, garmentType]
+  );
+  const selectedProduct = useMemo(
+    () => productsForGarment.find((product) => product.id === selectedProductId) ?? productsForGarment[0] ?? null,
+    [productsForGarment, selectedProductId]
+  );
+  const selectedVariant = useMemo(
+    () =>
+      selectedProduct?.variants.find((variant) => variant.id === selectedVariantId) ??
+      selectedProduct?.variants.find((variant) => variant.isDefault) ??
+      selectedProduct?.variants[0] ??
+      null,
+    [selectedProduct, selectedVariantId]
+  );
   const printAreaRef = useRef<PrintArea>(activePrintArea);
 
   useEffect(() => {
     printAreaRef.current = activePrintArea;
   }, [activePrintArea]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadCustomizerProducts = async (): Promise<void> => {
+      try {
+        const response = await fetch("/api/customizer/options", { credentials: "include" });
+        if (!response.ok) {
+          throw new Error("customizer-options-failed");
+        }
+
+        const payload = (await response.json()) as ApiEnvelope<{ items: CustomizerProduct[] }>;
+        if (mounted) {
+          setCustomizerProducts(payload.data?.items ?? []);
+        }
+      } catch {
+        if (mounted) {
+          setStatusMessage("Не удалось загрузить базовые вещи RSH BASICS для корзины.");
+        }
+      }
+    };
+
+    void loadCustomizerProducts();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const firstProduct = productsForGarment[0];
+    if (!firstProduct) {
+      setSelectedProductId("");
+      setSelectedVariantId("");
+      return;
+    }
+
+    if (!productsForGarment.some((product) => product.id === selectedProductId)) {
+      setSelectedProductId(firstProduct.id);
+      setSelectedVariantId(firstProduct.variants.find((variant) => variant.isDefault)?.id ?? firstProduct.variants[0]?.id ?? "");
+      return;
+    }
+
+    const activeProduct = productsForGarment.find((product) => product.id === selectedProductId);
+    if (activeProduct && !activeProduct.variants.some((variant) => variant.id === selectedVariantId)) {
+      setSelectedVariantId(activeProduct.variants.find((variant) => variant.isDefault)?.id ?? activeProduct.variants[0]?.id ?? "");
+    }
+  }, [productsForGarment, selectedProductId, selectedVariantId]);
 
   const getEditableObjects = useCallback((canvas: Canvas): FabricObject[] => {
     return canvas
@@ -651,6 +750,12 @@ export const EditorCanvas = (): JSX.Element => {
     void repaintTemplate(canvas);
     refreshLayers();
   }, [garmentType, garmentColor, repaintTemplate, refreshLayers]);
+
+  const changeSelectedProduct = (productId: string): void => {
+    const product = productsForGarment.find((item) => item.id === productId);
+    setSelectedProductId(productId);
+    setSelectedVariantId(product?.variants.find((variant) => variant.isDefault)?.id ?? product?.variants[0]?.id ?? "");
+  };
 
   const addText = (): void => {
     const canvas = fabricRef.current;
@@ -825,20 +930,72 @@ export const EditorCanvas = (): JSX.Element => {
     canvas.requestRenderAll();
   };
 
-  const saveDesign = async (): Promise<void> => {
+  const createDesignRequest = async (): Promise<string> => {
     const canvas = fabricRef.current;
     if (!canvas) {
-      return;
+      throw new Error("canvas-not-ready");
     }
-
-    setStatusMessage("Сохраняем дизайн...");
 
     const canvasJson = canvas.toJSON();
     const previewUrl = canvas.toDataURL({ format: "webp", quality: 0.9, multiplier: 1 });
+    const csrfToken = await ensureCsrfToken();
+
+    const response = await fetch("/api/designs", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-csrf-token": csrfToken
+      },
+      credentials: "include",
+      body: JSON.stringify({
+        garmentType,
+        garmentColor,
+        canvasJson,
+        previewUrl,
+        previewWidth: canvas.getWidth(),
+        previewHeight: canvas.getHeight()
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(response.status === 401 ? "auth-required" : "failed-save");
+    }
+
+    const payload = (await response.json()) as ApiEnvelope<{ id: string }>;
+    if (!payload.data?.id) {
+      throw new Error("missing-design-id");
+    }
+
+    return payload.data.id;
+  };
+
+  const saveDesign = async (): Promise<void> => {
+    setIsSaving(true);
+    setStatusMessage("Сохраняем дизайн...");
 
     try {
+      await createDesignRequest();
+      setStatusMessage("Дизайн сохранён в профиль.");
+    } catch {
+      setStatusMessage("Не удалось сохранить дизайн. Войдите в аккаунт и повторите.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const saveDesignAndAddToCart = async (): Promise<void> => {
+    if (!selectedProduct || !selectedVariant) {
+      setStatusMessage("Для этого макета пока нет активной базы RSH BASICS в каталоге.");
+      return;
+    }
+
+    setIsSaving(true);
+    setStatusMessage("Сохраняем дизайн и добавляем вещь в корзину...");
+
+    try {
+      const designId = await createDesignRequest();
       const csrfToken = await ensureCsrfToken();
-      const response = await fetch("/api/designs", {
+      const response = await fetch("/api/cart/items", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -846,25 +1003,24 @@ export const EditorCanvas = (): JSX.Element => {
         },
         credentials: "include",
         body: JSON.stringify({
-          garmentType,
-          garmentColor,
-          canvasJson,
-          previewUrl,
-          previewWidth: canvas.getWidth(),
-          previewHeight: canvas.getHeight()
+          productId: selectedProduct.id,
+          variantId: selectedVariant.id,
+          quantity: 1,
+          customizationId: designId
         })
       });
 
       if (!response.ok) {
-        throw new Error("failed-save");
+        throw new Error(response.status === 401 ? "auth-required" : "cart-add-failed");
       }
 
-      setStatusMessage("Дизайн сохранён в профиль.");
+      setStatusMessage("Готово: кастомная вещь добавлена в корзину.");
     } catch {
-      setStatusMessage("Не удалось сохранить дизайн. Войдите в аккаунт и повторите.");
+      setStatusMessage("Не удалось добавить в корзину. Войдите в аккаунт и повторите.");
+    } finally {
+      setIsSaving(false);
     }
   };
-
   return (
     <div className="space-y-4">
       <section className="rounded-xl border bg-card p-4">
@@ -920,6 +1076,54 @@ export const EditorCanvas = (): JSX.Element => {
                 Привязка
               </label>
             </div>
+          </div>
+        </div>
+
+        <div className="mt-4 grid gap-3 rounded-lg border bg-background/70 p-3 md:grid-cols-[1fr_1fr_auto]">
+          <div className="space-y-1">
+            <label htmlFor="customizer-product" className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+              База для корзины
+            </label>
+            <select
+              id="customizer-product"
+              value={selectedProduct?.id ?? ""}
+              onChange={(event) => changeSelectedProduct(event.target.value)}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              disabled={productsForGarment.length === 0}
+            >
+              {productsForGarment.length === 0 ? <option value="">Нет активной базы</option> : null}
+              {productsForGarment.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="space-y-1">
+            <label htmlFor="customizer-variant" className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+              Размер / цвет
+            </label>
+            <select
+              id="customizer-variant"
+              value={selectedVariant?.id ?? ""}
+              onChange={(event) => setSelectedVariantId(event.target.value)}
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              disabled={!selectedProduct}
+            >
+              {selectedProduct?.variants.map((variant) => (
+                <option key={variant.id} value={variant.id}>
+                  {variant.name} · {variant.sku}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col justify-end">
+            <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Цена базы</p>
+            <p className="text-sm font-semibold">
+              {selectedVariant ? formatStoreMoney(selectedVariant.priceCents, selectedVariant.currency) : "—"}
+            </p>
           </div>
         </div>
       </section>
@@ -1022,9 +1226,22 @@ export const EditorCanvas = (): JSX.Element => {
             <canvas ref={canvasElementRef} className="mx-auto block" />
           </div>
 
-          <div className="flex items-center gap-3">
-            <button type="button" onClick={saveDesign} className="rounded-md bg-primary px-4 py-2 text-primary-foreground">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={saveDesign}
+              disabled={isSaving}
+              className="rounded-md border px-4 py-2 disabled:cursor-not-allowed disabled:opacity-60"
+            >
               Сохранить дизайн
+            </button>
+            <button
+              type="button"
+              onClick={saveDesignAndAddToCart}
+              disabled={isSaving || !selectedProduct || !selectedVariant}
+              className="rounded-md bg-primary px-4 py-2 text-primary-foreground disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              Сохранить и добавить в корзину
             </button>
             {statusMessage ? <p className="text-sm text-muted-foreground">{statusMessage}</p> : null}
           </div>
@@ -1059,3 +1276,4 @@ export const EditorCanvas = (): JSX.Element => {
     </div>
   );
 };
+

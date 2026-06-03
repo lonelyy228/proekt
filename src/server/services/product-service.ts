@@ -4,6 +4,26 @@ import { sanitizeText } from "@/server/utils/sanitize";
 import { AppError } from "@/server/utils/errors";
 import { invalidateCatalogCache, invalidateProductCache } from "@/lib/cache";
 
+const resolveCustomizerGarmentType = (tags: string[]): "TSHIRT" | "HOODIE" | "SWEATSHIRT" | "SHORTS" | "PANTS" => {
+  if (tags.includes("hoodie")) {
+    return "HOODIE";
+  }
+
+  if (tags.includes("sweatshirt")) {
+    return "SWEATSHIRT";
+  }
+
+  if (tags.includes("shorts")) {
+    return "SHORTS";
+  }
+
+  if (tags.includes("pants")) {
+    return "PANTS";
+  }
+
+  return "TSHIRT";
+};
+
 export const productService = {
   listCatalog: async (params: {
     search?: string;
@@ -89,6 +109,33 @@ export const productService = {
   },
 
   getProductBySlug: (slug: string) => productRepository.findBySlug(slug),
+
+  listCustomizerBaseProducts: async () => {
+    const products = await productRepository.findCustomizerBaseProducts();
+
+    return {
+      items: products.map((product) => ({
+        id: product.id,
+        slug: product.slug,
+        brand: product.brand,
+        name: product.name,
+        garmentType: resolveCustomizerGarmentType(product.tags),
+        basePriceCents: product.basePriceCents,
+        currency: product.currency,
+        imageUrl: product.images[0]?.url ?? null,
+        variants: product.variants.map((variant) => ({
+          id: variant.id,
+          name: variant.name,
+          sku: variant.sku,
+          color: variant.color,
+          size: variant.size,
+          priceCents: variant.priceCents,
+          currency: variant.currency,
+          isDefault: variant.isDefault
+        }))
+      }))
+    };
+  },
 
   getRelatedProducts: async (slug: string) => {
     const source = await productRepository.findBySlug(slug);
