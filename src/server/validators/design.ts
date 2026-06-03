@@ -1,5 +1,21 @@
 import { z } from "zod";
 
+const imageSourceSchema = z
+  .string()
+  .max(10_000_000)
+  .refine((value) => {
+    if (value.startsWith("data:image/png;base64,") || value.startsWith("data:image/webp;base64,")) {
+      return true;
+    }
+
+    try {
+      const url = new URL(value);
+      return url.protocol === "https:" || url.protocol === "http:";
+    } catch {
+      return false;
+    }
+  }, "Expected an http(s), png data URL, or webp data URL");
+
 const designObjectSchema = z.object({
   type: z.string().min(1).max(40),
   left: z.number(),
@@ -9,7 +25,7 @@ const designObjectSchema = z.object({
   angle: z.number(),
   fill: z.string().max(32).optional(),
   text: z.string().max(300).optional(),
-  src: z.string().url().optional()
+  src: imageSourceSchema.optional()
 });
 
 export const designSchema = z.object({
@@ -19,7 +35,7 @@ export const designSchema = z.object({
     version: z.string(),
     objects: z.array(designObjectSchema).max(250)
   }),
-  previewUrl: z.string().url(),
+  previewUrl: imageSourceSchema,
   previewWidth: z.number().int().positive().max(4096),
   previewHeight: z.number().int().positive().max(4096)
 });

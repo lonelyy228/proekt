@@ -2,7 +2,15 @@
 import { cookieConfig } from "@/config/constants";
 
 const protectedPathPrefixes = ["/profile", "/cart", "/checkout", "/favorites", "/admin"];
-const publicApiPaths = ["/api/auth/login", "/api/auth/register", "/api/auth/refresh", "/api/webhooks/stripe"];
+const publicApiPaths = [
+  "/api/auth/csrf",
+  "/api/auth/login",
+  "/api/auth/register",
+  "/api/auth/refresh",
+  "/api/customizer/options",
+  "/api/webhooks/stripe"
+];
+const publicApiPrefixes = ["/api/products"];
 
 const securityHeaders = {
   "x-frame-options": "DENY",
@@ -14,7 +22,8 @@ const securityHeaders = {
 const isProtectedPath = (pathname: string): boolean =>
   protectedPathPrefixes.some((prefix) => pathname.startsWith(prefix));
 
-const isPublicApi = (pathname: string): boolean => publicApiPaths.includes(pathname);
+const isPublicApi = (pathname: string): boolean =>
+  publicApiPaths.includes(pathname) || publicApiPrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 
 const applySecurityHeaders = (response: NextResponse): NextResponse => {
   Object.entries(securityHeaders).forEach(([header, value]) => {

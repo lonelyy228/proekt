@@ -239,6 +239,23 @@ const productSeeds: ProductSeed[] = [
       size: "M",
       priceCents: 5200
     }
+  },
+  {
+    slug: "rsh-basics-shorts-training-14",
+    brand: "RSH BASICS",
+    categorySlug: "rsh-basics",
+    name: "RSH Basics Training Shorts",
+    description: "Базовые шорты RSH BASICS для персонального принта в 2D Lab.",
+    shortDescription: "База для кастомизации: шорты",
+    tags: ["basics", "customizable", "shorts", "rsh-basics"],
+    basePriceCents: 3400,
+    variant: {
+      sku: "RSH-BSC-SHRT-BLK-M",
+      name: "Black / M",
+      color: "Black",
+      size: "M",
+      priceCents: 3400
+    }
   }
 ];
 
@@ -320,6 +337,7 @@ async function main(): Promise<void> {
     await prisma.productVariant.upsert({
       where: { sku: seed.variant.sku },
       update: {
+        productId: product.id,
         name: seed.variant.name,
         priceCents: seed.variant.priceCents,
         currency: "USD",

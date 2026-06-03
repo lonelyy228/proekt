@@ -52,6 +52,31 @@ export const productRepository = {
       take: 8
     }),
 
+  findCustomizerBaseProducts: () =>
+    prisma.product.findMany({
+      where: {
+        brand: {
+          equals: "RSH BASICS",
+          mode: "insensitive"
+        },
+        status: ProductStatus.ACTIVE,
+        deletedAt: null,
+        tags: {
+          has: "customizable"
+        }
+      },
+      include: {
+        variants: {
+          orderBy: [{ isDefault: "desc" }, { size: "asc" }, { color: "asc" }]
+        },
+        images: {
+          orderBy: { sortOrder: "asc" },
+          take: 1
+        }
+      },
+      orderBy: { name: "asc" }
+    }),
+
   createProduct: (data: Prisma.ProductCreateInput) => prisma.product.create({ data }),
 
   findById: (id: string) =>

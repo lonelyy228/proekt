@@ -1,6 +1,4 @@
-﻿import { env } from "@/config/env";
-
-const rubFormatter = new Intl.NumberFormat("ru-RU", {
+﻿const rubFormatter = new Intl.NumberFormat("ru-RU", {
   style: "currency",
   currency: "RUB",
   maximumFractionDigits: 0
@@ -8,9 +6,16 @@ const rubFormatter = new Intl.NumberFormat("ru-RU", {
 
 const normalizeCurrency = (value: string): string => value.trim().toUpperCase();
 
+const getUsdToRubRate = (): number => {
+  const rawRate = process.env.NEXT_PUBLIC_STORE_USD_TO_RUB_RATE ?? process.env.STORE_USD_TO_RUB_RATE ?? "90";
+  const parsedRate = Number(rawRate);
+
+  return Number.isFinite(parsedRate) && parsedRate > 0 ? parsedRate : 90;
+};
+
 const usdCentsToRubAmount = (usdCents: number): number => {
   const usd = usdCents / 100;
-  return usd * env.STORE_USD_TO_RUB_RATE;
+  return usd * getUsdToRubRate();
 };
 
 const rubCentsToRubAmount = (rubCents: number): number => rubCents / 100;
@@ -28,3 +33,4 @@ export const formatStoreMoney = (amountCents: number, currency: string): string 
 
   return rubFormatter.format(rubCentsToRubAmount(amountCents));
 };
+
