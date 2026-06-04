@@ -1,6 +1,11 @@
 ﻿import { PrismaClient, ProductStatus, Role } from "@prisma/client";
 import { hashSync } from "bcryptjs";
 
+type ProductSeedImage = {
+  url: string;
+  alt: string;
+};
+
 type ProductSeed = {
   slug: string;
   brand: string;
@@ -8,10 +13,8 @@ type ProductSeed = {
   name: string;
   description: string;
   shortDescription: string;
-  image: {
-    url: string;
-    alt: string;
-  };
+  image?: ProductSeedImage;
+  images?: ProductSeedImage[];
   tags: string[];
   basePriceCents: number;
   variant: {
@@ -24,6 +27,7 @@ type ProductSeed = {
 };
 
 const prisma = new PrismaClient();
+const maxProductImages = 3;
 const legacySlugs = [
   "rsh-archive-tee-01",
   "rsh-monogram-hoodie-02",
@@ -340,6 +344,16 @@ const productSeeds: ProductSeed[] = [
   }
 ];
 
+const getProductImages = (seed: ProductSeed): ProductSeedImage[] => {
+  const images = seed.images ?? (seed.image ? [seed.image] : []);
+
+  if (images.length === 0) {
+    throw new Error(`Product seed "${seed.slug}" must contain at least one image.`);
+  }
+
+  return images.slice(0, maxProductImages);
+};
+
 async function main(): Promise<void> {
   const userPasswordHash = hashSync("ChangeMe123!", 12);
 
@@ -392,6 +406,7 @@ async function main(): Promise<void> {
   });
 
   for (const seed of productSeeds) {
+    const productImages = getProductImages(seed);
     const product = await prisma.product.upsert({
       where: { slug: seed.slug },
       update: {
@@ -448,15 +463,15 @@ async function main(): Promise<void> {
       }
     });
 
-    await prisma.productImage.create({
-      data: {
+    await prisma.productImage.createMany({
+      data: productImages.map((image, index) => ({
         productId: product.id,
-        url: seed.image.url,
-        alt: seed.image.alt,
+        url: image.url,
+        alt: image.alt,
         width: 1200,
         height: 1200,
-        sortOrder: 0
-      }
+        sortOrder: index
+      }))
     });
   }
 
@@ -479,3 +494,5 @@ main()
     await prisma.$disconnect();
     process.exit(1);
   });
+
+

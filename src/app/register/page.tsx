@@ -20,7 +20,7 @@ const readableValidationMessage = (payload: RegisterResponse): string => {
   return firstDetail ?? payload.error?.message ?? "Не удалось зарегистрироваться";
 };
 
-<<type PasswordRequirement = {
+type PasswordRequirement = {
   id: string;
   label: string;
   isValid: boolean;
@@ -236,4 +236,3 @@ export default function RegisterPage(): JSX.Element {
     </section>
   );
 }
-
