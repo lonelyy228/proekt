@@ -7,7 +7,14 @@ export const cartRepository = {
       include: {
         items: {
           include: {
-            product: true,
+            product: {
+              include: {
+                images: {
+                  orderBy: { sortOrder: "asc" },
+                  take: 1
+                }
+              }
+            },
             variant: true,
             customization: true
           }

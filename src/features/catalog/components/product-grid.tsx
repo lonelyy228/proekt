@@ -27,7 +27,7 @@ export const ProductGrid = ({ products }: { products: ProductListItem[] }): JSX.
             RSH
           </div>
         </Link>
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <Link
             href={`/catalog/brands/${brandToSlug(product.brand)}`}
             className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground underline-offset-2 hover:text-primary hover:underline"
