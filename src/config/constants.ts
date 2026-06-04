@@ -1,6 +1,9 @@
 ﻿import { env } from "@/config/env";
 
 const isPlaywrightRuntime = process.env.PLAYWRIGHT_TEST === "1";
+const cookieDomain = ["localhost", "127.0.0.1", "::1"].includes(env.COOKIE_DOMAIN.toLowerCase())
+  ? undefined
+  : env.COOKIE_DOMAIN;
 
 export const authConfig = {
   accessTokenTtlSeconds: env.ACCESS_TOKEN_TTL_SECONDS,
@@ -13,7 +16,7 @@ export const cookieConfig = {
   secure: env.NODE_ENV === "production",
   httpOnly: true,
   sameSite: "strict" as const,
-  domain: env.COOKIE_DOMAIN,
+  domain: cookieDomain,
   accessTokenName: "access_token",
   refreshTokenName: "refresh_token",
   csrfTokenName: "csrf_token"
