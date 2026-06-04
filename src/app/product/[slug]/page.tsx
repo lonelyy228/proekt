@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { isCustomizerBaseBrand } from "@/config/customizer";
 import { getBrandProfile } from "@/features/catalog/brand-profile";
 import { brandToSlug } from "@/features/catalog/brand-directory";
+import { ProductImageGallery } from "@/features/catalog/components/product-image-gallery";
 import { ProductPurchasePanel } from "@/features/catalog/components/product-purchase-panel";
 import { formatStoreMoney } from "@/lib/currency";
 import { productService } from "@/server/services/product-service";
@@ -20,29 +21,17 @@ export default async function ProductPage({ params }: { params: { slug: string }
   const relatedProducts = await productService.getRelatedProducts(params.slug);
   const profile = getBrandProfile(product.brand);
   const isBaseCustomizerProduct = isCustomizerBaseBrand(product.brand);
-  const primaryImage = product.images[0] ?? null;
+  const galleryImages = product.images.slice(0, 3).map((image) => ({
+    id: image.id,
+    url: image.url,
+    alt: image.alt
+  }));
 
   return (
     <div className="space-y-10">
       <section className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-4">
-          <div className="relative aspect-square overflow-hidden rounded-2xl border bg-[linear-gradient(140deg,rgba(8,8,8,0.12),rgba(255,255,255,0.72))] shadow-sm">
-            {primaryImage ? (
-              <Image
-                src={primaryImage.url}
-                alt={primaryImage.alt}
-                fill
-                priority
-                sizes="(min-width: 1024px) 55vw, 100vw"
-                className="object-cover"
-              />
-            ) : (
-              <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.85),transparent_34%),linear-gradient(140deg,rgba(8,8,8,0.12),rgba(255,255,255,0.72))]" />
-            )}
-            <div className="absolute left-4 top-4 rounded-full bg-background/85 px-3 py-1 text-[10px] uppercase tracking-[0.18em] backdrop-blur">
-              RSH selected
-            </div>
-          </div>
+          <ProductImageGallery images={galleryImages} productName={product.name} />
           <div className="grid gap-3 sm:grid-cols-2">
             <article className="rounded-xl border bg-card p-3">
               <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Оценка состояния</p>
