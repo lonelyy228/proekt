@@ -1,4 +1,5 @@
 import Link from "next/link";
+import Image from "next/image";
 import { notFound } from "next/navigation";
 import { isCustomizerBaseBrand } from "@/config/customizer";
 import { getBrandProfile } from "@/features/catalog/brand-profile";
@@ -19,12 +20,29 @@ export default async function ProductPage({ params }: { params: { slug: string }
   const relatedProducts = await productService.getRelatedProducts(params.slug);
   const profile = getBrandProfile(product.brand);
   const isBaseCustomizerProduct = isCustomizerBaseBrand(product.brand);
+  const primaryImage = product.images[0] ?? null;
 
   return (
     <div className="space-y-10">
       <section className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-4">
-          <div className="aspect-square rounded-xl border bg-[linear-gradient(140deg,rgba(8,8,8,0.12),rgba(255,255,255,0.72))]" />
+          <div className="relative aspect-square overflow-hidden rounded-xl border bg-[linear-gradient(140deg,rgba(8,8,8,0.12),rgba(255,255,255,0.72))]">
+            {primaryImage ? (
+              <Image
+                src={primaryImage.url}
+                alt={primaryImage.alt}
+                fill
+                priority
+                sizes="(min-width: 1024px) 55vw, 100vw"
+                className="object-cover"
+              />
+            ) : (
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_20%,rgba(255,255,255,0.85),transparent_34%),linear-gradient(140deg,rgba(8,8,8,0.12),rgba(255,255,255,0.72))]" />
+            )}
+            <div className="absolute left-4 top-4 rounded-full bg-background/85 px-3 py-1 text-[10px] uppercase tracking-[0.18em] backdrop-blur">
+              RSH selected
+            </div>
+          </div>
           <div className="grid gap-3 sm:grid-cols-2">
             <article className="rounded-lg border bg-card p-3">
               <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Оценка состояния</p>
@@ -153,7 +171,18 @@ export default async function ProductPage({ params }: { params: { slug: string }
         {relatedProducts.length === 0 ? <p className="text-sm text-muted-foreground">Пока нет похожих позиций.</p> : null}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {relatedProducts.map((item) => (
-            <Link key={item.id} href={`/product/${item.slug}`} className="rounded-lg border p-4 transition hover:border-primary">
+            <Link key={item.id} href={`/product/${item.slug}`} className="group rounded-lg border p-3 transition hover:border-primary">
+              <div className="relative mb-3 aspect-square overflow-hidden rounded-md border bg-muted/30">
+                {item.images[0] ? (
+                  <Image
+                    src={item.images[0].url}
+                    alt={item.images[0].alt}
+                    fill
+                    sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
+                    className="object-cover transition duration-500 group-hover:scale-105"
+                  />
+                ) : null}
+              </div>
               <p className="text-xs uppercase tracking-[0.16em] text-muted-foreground">{item.brand}</p>
               <p className="mt-2 font-medium">{item.name}</p>
               <p className="mt-2 text-sm text-muted-foreground">{formatStoreMoney(item.basePriceCents, item.currency)}</p>
