@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
@@ -8,7 +8,16 @@ type RegisterResponse = {
   success: boolean;
   error?: {
     message: string;
+    details?: string[];
   };
+};
+
+const readableValidationMessage = (payload: RegisterResponse): string => {
+  const firstDetail = payload.error?.details?.[0]
+    ?.replace(/^password:\s*/i, "")
+    .replace(/^email:\s*/i, "");
+
+  return firstDetail ?? payload.error?.message ?? "Не удалось зарегистрироваться";
 };
 
 export default function RegisterPage(): JSX.Element {
@@ -43,7 +52,7 @@ export default function RegisterPage(): JSX.Element {
       const payload = (await response.json()) as RegisterResponse;
 
       if (!response.ok || !payload.success) {
-        throw new Error(payload.error?.message ?? "Не удалось зарегистрироваться");
+        throw new Error(readableValidationMessage(payload));
       }
 
       router.push("/login?registered=1");
@@ -59,10 +68,16 @@ export default function RegisterPage(): JSX.Element {
       <div>
         <p className="text-xs uppercase tracking-[0.22em] text-primary">RSH Access</p>
         <h1 className="mt-2 text-3xl font-semibold">Регистрация</h1>
-        <p className="mt-2 text-sm text-muted-foreground">Создайте аккаунт для заказов, избранного и кастом-дизайнов.</p>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Создайте аккаунт для заказов, избранного и кастом-дизайнов.
+        </p>
       </div>
 
-      {errorMessage ? <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">{errorMessage}</p> : null}
+      {errorMessage ? (
+        <p className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+          {errorMessage}
+        </p>
+      ) : null}
 
       <form className="space-y-4" onSubmit={handleSubmit}>
         <label className="block space-y-1">
@@ -88,6 +103,9 @@ export default function RegisterPage(): JSX.Element {
             autoComplete="new-password"
             minLength={10}
           />
+          <span className="block text-xs text-muted-foreground">
+            Минимум 10 символов: большая и маленькая латинская буква, цифра и спецсимвол.
+          </span>
         </label>
 
         <label className="block space-y-1">
@@ -108,7 +126,7 @@ export default function RegisterPage(): JSX.Element {
           disabled={isSubmitting}
           type="submit"
         >
-          {isSubmitting ? "Создаем аккаунт..." : "Зарегистрироваться"}
+          {isSubmitting ? "Создаём аккаунт..." : "Зарегистрироваться"}
         </button>
       </form>
 
