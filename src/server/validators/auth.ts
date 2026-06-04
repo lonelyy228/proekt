@@ -1,15 +1,15 @@
 ﻿import { z } from "zod";
 
 export const registerSchema = z.object({
-  email: z.string().email().max(255),
+  email: z.string().trim().email("Введите корректный email").max(255, "Email слишком длинный"),
   password: z
     .string()
-    .min(10)
-    .max(128)
-    .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
-    .regex(/[a-z]/, "Password must contain at least one lowercase letter")
-    .regex(/[0-9]/, "Password must contain at least one digit")
-    .regex(/[^A-Za-z0-9]/, "Password must contain at least one special character")
+    .min(10, "Пароль должен быть минимум 10 символов")
+    .max(128, "Пароль слишком длинный")
+    .regex(/[A-Z]/, "Пароль должен содержать хотя бы одну заглавную латинскую букву")
+    .regex(/[a-z]/, "Пароль должен содержать хотя бы одну строчную латинскую букву")
+    .regex(/[0-9]/, "Пароль должен содержать хотя бы одну цифру")
+    .regex(/[^A-Za-z0-9]/, "Пароль должен содержать хотя бы один спецсимвол, например !")
 });
 
 export const loginSchema = z.object({
