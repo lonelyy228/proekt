@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { isCustomizerBaseBrand } from "@/config/customizer";
 import { getBrandProfile } from "@/features/catalog/brand-profile";
 import { brandToSlug } from "@/features/catalog/brand-directory";
+import { ProductPurchasePanel } from "@/features/catalog/components/product-purchase-panel";
 import { formatStoreMoney } from "@/lib/currency";
 import { productService } from "@/server/services/product-service";
 
@@ -52,6 +53,24 @@ export default async function ProductPage({ params }: { params: { slug: string }
           </h1>
           <p className="text-muted-foreground">{product.description}</p>
           <p className="text-2xl font-semibold">{formatStoreMoney(product.basePriceCents, product.currency)}</p>
+
+          <ProductPurchasePanel
+            product={{
+              id: product.id,
+              name: product.name,
+              brand: product.brand,
+              isBaseCustomizerProduct
+            }}
+            variants={product.variants.map((variant) => ({
+              id: variant.id,
+              name: variant.name,
+              color: variant.color,
+              size: variant.size,
+              priceCents: variant.priceCents,
+              currency: variant.currency,
+              isDefault: variant.isDefault
+            }))}
+          />
 
           <article className="rounded-lg border bg-card p-4">
             <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Комментарий по вещи</p>
