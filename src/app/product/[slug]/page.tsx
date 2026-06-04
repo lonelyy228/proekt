@@ -26,7 +26,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
     <div className="space-y-10">
       <section className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="space-y-4">
-          <div className="relative aspect-square overflow-hidden rounded-xl border bg-[linear-gradient(140deg,rgba(8,8,8,0.12),rgba(255,255,255,0.72))]">
+          <div className="relative aspect-square overflow-hidden rounded-2xl border bg-[linear-gradient(140deg,rgba(8,8,8,0.12),rgba(255,255,255,0.72))] shadow-sm">
             {primaryImage ? (
               <Image
                 src={primaryImage.url}
@@ -44,11 +44,11 @@ export default async function ProductPage({ params }: { params: { slug: string }
             </div>
           </div>
           <div className="grid gap-3 sm:grid-cols-2">
-            <article className="rounded-lg border bg-card p-3">
+            <article className="rounded-xl border bg-card p-3">
               <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Оценка состояния</p>
               <p className="mt-2 text-lg font-semibold">{profile.conditionScale}</p>
             </article>
-            <article className="rounded-lg border bg-card p-3">
+            <article className="rounded-xl border bg-card p-3">
               <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Фокус бренда</p>
               <p className="mt-2 text-sm text-muted-foreground">{profile.focus}</p>
             </article>
@@ -57,7 +57,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
 
         <div className="space-y-5">
           <div className="inline-flex items-center rounded-full border px-3 py-1 text-[10px] uppercase tracking-[0.18em]">
-            Подлинность подтверждена
+            Подлинность проверена
           </div>
           <p className="text-xs uppercase tracking-[0.22em] text-primary">RSH Product Dossier</p>
           <Link
@@ -90,12 +90,12 @@ export default async function ProductPage({ params }: { params: { slug: string }
             }))}
           />
 
-          <article className="rounded-lg border bg-card p-4">
+          <article className="rounded-xl border bg-card p-4">
             <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Комментарий по вещи</p>
             <p className="mt-2 text-sm text-muted-foreground">{profile.archiveNote}</p>
           </article>
 
-          <article className="rounded-lg border bg-card p-4">
+          <article className="rounded-xl border bg-card p-4">
             <p className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Стилистический сигнал</p>
             <p className="mt-2 text-sm text-muted-foreground">{profile.stylingSignal}</p>
           </article>
@@ -119,8 +119,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
           {isBaseCustomizerProduct ? (
             <>
               <p className="mt-3 text-sm text-muted-foreground">
-                Для базовой линейки RSH BASICS доступна персонализация в 2D-редакторе: добавляй текст, графику и сохраняй
-                свой дизайн в профиль.
+                Для базовой линейки RSH BASICS доступна персонализация в 2D-редакторе: добавляйте текст, фото и графику, а затем сохраняйте дизайн в профиль.
               </p>
               <Link
                 href="/editor"
@@ -131,7 +130,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
             </>
           ) : (
             <p className="mt-3 text-sm text-muted-foreground">
-              Эта позиция относится к брендовой линейке. Кастомизация для брендовых вещей отключена.
+              Эта позиция относится к брендовой линейке. Кастомизация для брендовых вещей отключена, чтобы не нарушать целостность товара и бренда.
             </p>
           )}
         </article>
@@ -171,7 +170,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
         {relatedProducts.length === 0 ? <p className="text-sm text-muted-foreground">Пока нет похожих позиций.</p> : null}
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {relatedProducts.map((item) => (
-            <Link key={item.id} href={`/product/${item.slug}`} className="group rounded-lg border p-3 transition hover:border-primary">
+            <Link key={item.id} href={`/product/${item.slug}`} className="group rounded-xl border p-3 transition hover:border-primary">
               <div className="relative mb-3 aspect-square overflow-hidden rounded-md border bg-muted/30">
                 {item.images[0] ? (
                   <Image

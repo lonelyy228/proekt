@@ -61,7 +61,7 @@ export const cartService = {
         totalPriceCents: item.quantity * unitPriceCents,
         productName: item.product.name,
         variantName: item.variant.name,
-        imageUrl: item.product.shortDescription,
+        imageUrl: item.product.images[0]?.url ?? null,
         customizationPreviewUrl: item.customization?.previewUrl ?? null,
         customizationGarmentType: item.customization?.garmentType ?? null,
         customizationColor: item.customization?.garmentColor ?? null

@@ -156,6 +156,9 @@ export default function RegisterPage(): JSX.Element {
             minLength={10}
             aria-describedby="password-requirements"
           />
+          <span className="block text-xs text-muted-foreground">
+            Минимум 10 символов: большая и маленькая латинская буква, цифра и спецсимвол.
+          </span>
         </label>
 
         <div id="password-requirements" className="rounded-lg border bg-muted/30 p-3">

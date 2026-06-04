@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { FormEvent, useMemo, useState } from "react";
@@ -16,6 +16,8 @@ type CheckoutSessionResponse = {
     message: string;
   };
 };
+
+const getCheckoutItemImage = (item: CartItem): string | null => item.customizationPreviewUrl ?? item.imageUrl ?? null;
 
 const getItemDescriptor = (item: CartItem): string => {
   if (!item.customizationId) {
@@ -258,9 +260,9 @@ export default function CheckoutPage(): JSX.Element {
           {cart.items.map((item) => (
             <article key={item.id} className="grid grid-cols-[72px_1fr] gap-3 rounded-md border p-3">
               <div className="flex h-20 items-center justify-center overflow-hidden rounded-md border bg-muted/30">
-                {item.customizationPreviewUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- Fabric previews are generated data/object URLs.
-                  <img src={item.customizationPreviewUrl} alt={`Превью ${item.productName}`} className="h-full w-full object-contain" />
+                {getCheckoutItemImage(item) ? (
+                  // eslint-disable-next-line @next/next/no-img-element -- Checkout previews can be generated or uploaded URLs.
+                  <img src={getCheckoutItemImage(item) ?? ""} alt={`Превью ${item.productName}`} className="h-full w-full object-cover" />
                 ) : (
                   <span className="px-2 text-center text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
                     RSH item
