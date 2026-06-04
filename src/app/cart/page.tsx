@@ -14,6 +14,25 @@ const getItemDescriptor = (item: CartItem): string => {
   return `${item.variantName} · ${details.join(" · ")}`;
 };
 
+const CartItemImage = ({ item }: { item: CartItem }): JSX.Element => {
+  const imageSrc = item.customizationPreviewUrl ?? item.imageUrl ?? null;
+
+  if (!imageSrc) {
+    return (
+      <div className="flex h-32 items-center justify-center rounded-xl border bg-muted/30 px-4 text-center text-xs uppercase tracking-[0.16em] text-muted-foreground">
+        RSH item
+      </div>
+    );
+  }
+
+  return (
+    <div className="h-32 overflow-hidden rounded-xl border bg-muted/30">
+      {/* eslint-disable-next-line @next/next/no-img-element -- Cart previews can be uploaded/custom generated URLs. */}
+      <img src={imageSrc} alt={`Превью ${item.productName}`} className="h-full w-full object-cover" />
+    </div>
+  );
+};
+
 export default function CartPage(): JSX.Element {
   const { data, isLoading, isError, upsertItem, removeItem } = useCart();
   const isMutating = upsertItem.isPending || removeItem.isPending;
@@ -70,13 +89,16 @@ export default function CartPage(): JSX.Element {
         <div>
           <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground">RSH checkout</p>
           <h1 className="text-3xl font-semibold">Корзина</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Проверьте размеры, количество и кастомные дизайны перед оформлением заказа.
+          </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/catalog" className="rounded-md border px-4 py-2 text-sm hover:bg-muted">
             Продолжить покупки
           </Link>
           <Link href="/editor" className="rounded-md border px-4 py-2 text-sm hover:bg-muted">
-            Вернуться в 2D Lab
+            Открыть 2D Lab
           </Link>
         </div>
       </header>
@@ -85,7 +107,7 @@ export default function CartPage(): JSX.Element {
         <section className="rounded-2xl border bg-card p-8">
           <p className="text-lg font-medium">Корзина пока пустая.</p>
           <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-            Можно выбрать брендовую вещь в каталоге или собрать кастомную базовую вещь в 2D Lab.
+            Можно выбрать брендовую вещь в каталоге или собрать кастомную базовую вещь в RSH 2D Lab.
           </p>
           <div className="mt-5 flex flex-wrap gap-2">
             <Link href="/catalog" className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground">
@@ -101,20 +123,7 @@ export default function CartPage(): JSX.Element {
           <section className="space-y-3">
             {data.items.map((item) => (
               <article key={item.id} className="grid gap-4 rounded-2xl border bg-card p-4 sm:grid-cols-[132px_1fr]">
-                <div className="flex h-32 items-center justify-center overflow-hidden rounded-xl border bg-muted/30">
-                  {item.customizationPreviewUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element -- Fabric previews are generated data URLs/object URLs.
-                    <img
-                      src={item.customizationPreviewUrl}
-                      alt={`Превью ${item.productName}`}
-                      className="h-full w-full object-contain"
-                    />
-                  ) : (
-                    <span className="px-3 text-center text-xs text-muted-foreground">
-                      {item.imageUrl ?? "RSH product"}
-                    </span>
-                  )}
-                </div>
+                <CartItemImage item={item} />
 
                 <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                   <div className="min-w-0 space-y-2">
@@ -124,14 +133,14 @@ export default function CartPage(): JSX.Element {
                     </div>
                     {item.customizationId ? (
                       <div className="inline-flex rounded-full border border-primary/30 bg-primary/5 px-3 py-1 text-xs text-primary">
-                        Кастомный дизайн сохранён и привязан к заказу
+                        Кастомный дизайн сохранён и будет прикреплён к заказу
                       </div>
                     ) : null}
                     <p className="text-sm font-semibold">{formatStoreMoney(item.totalPriceCents, item.currency)}</p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                    <div className="inline-flex items-center rounded-lg border">
+                    <div className="inline-flex items-center rounded-lg border bg-background">
                       <button
                         type="button"
                         onClick={() => changeQuantity(item, item.quantity - 1)}
@@ -166,15 +175,15 @@ export default function CartPage(): JSX.Element {
             ))}
           </section>
 
-          <aside className="h-fit rounded-2xl border bg-card p-5">
+          <aside className="h-fit rounded-2xl border bg-card p-5 shadow-sm">
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Итог заказа</p>
             <div className="mt-4 space-y-3 text-sm">
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Товары</span>
+                <span className="text-muted-foreground">Позиций</span>
                 <span>{data.items.length}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-muted-foreground">Сумма</span>
+                <span className="text-muted-foreground">Сумма товаров</span>
                 <span className="font-semibold">{formatStoreMoney(data.subtotalCents, subtotalCurrency)}</span>
               </div>
             </div>
@@ -185,7 +194,7 @@ export default function CartPage(): JSX.Element {
               Оформить заказ
             </Link>
             <p className="mt-3 text-xs text-muted-foreground">
-              Для кастомных вещей в заказ попадает исходный дизайн и превью, а не только картинка.
+              В демо-режиме заказ можно завершить локально без реальной оплаты. Для production подключается Stripe Checkout и webhook.
             </p>
           </aside>
         </div>

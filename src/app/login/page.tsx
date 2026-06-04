@@ -31,7 +31,7 @@ const LoginForm = (): JSX.Element => {
   const [errorMessage, setErrorMessage] = useState<string>("");
 
   const successHint = useMemo(
-    () => (searchParams.get("registered") === "1" ? "Регистрация завершена. Выполните вход." : ""),
+    () => (searchParams.get("registered") === "1" ? "Регистрация завершена. Теперь войдите в аккаунт." : ""),
     [searchParams]
   );
 
@@ -78,7 +78,7 @@ const LoginForm = (): JSX.Element => {
         <p className="text-xs uppercase tracking-[0.22em] text-primary">RSH Access</p>
         <h1 className="mt-2 text-3xl font-semibold">Вход в аккаунт</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Войдите, чтобы управлять корзиной, избранным и заказами.
+          Войдите, чтобы управлять корзиной, избранным, заказами и сохранёнными дизайнами.
         </p>
       </div>
 
@@ -119,13 +119,14 @@ const LoginForm = (): JSX.Element => {
         </label>
 
         <label className="block space-y-1">
-          <span className="text-sm">Код 2FA (если включен)</span>
+          <span className="text-sm">Код 2FA (если включён)</span>
           <input
             className="w-full rounded-md border bg-background px-3 py-2 text-sm"
             type="text"
             value={totpCode}
             onChange={(event) => setTotpCode(event.target.value)}
             autoComplete="one-time-code"
+            inputMode="numeric"
           />
         </label>
 
