@@ -1,7 +1,10 @@
 "use client";
 
+import { useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ensureCsrfToken } from "@/lib/csrf-client";
+import { useAuth } from "@/hooks/use-auth";
+import { useGuestCartStore, type GuestCartItem } from "@/store/guest-cart-store";
 
 export type CartItem = {
   id: string;
@@ -31,6 +34,34 @@ type UpsertCartItemInput = {
   variantId: string;
   quantity: number;
   customizationId?: string | null;
+  currency?: string;
+  unitPriceCents?: number;
+  productName?: string;
+  variantName?: string;
+  imageUrl?: string | null;
+  customizationPreviewUrl?: string | null;
+  customizationGarmentType?: string | null;
+  customizationColor?: string | null;
+};
+
+type MutationLike<TPayload> = {
+  mutate: (
+    payload: TPayload,
+    options?: {
+      onSuccess?: () => void | Promise<void>;
+      onError?: () => void;
+    }
+  ) => void;
+  isPending: boolean;
+};
+
+type UseCartResult = {
+  data?: CartState;
+  isLoading: boolean;
+  isError: boolean;
+  isAuthenticated: boolean;
+  upsertItem: MutationLike<UpsertCartItemInput>;
+  removeItem: MutationLike<string>;
 };
 
 export const cartQueryKey = ["cart"] as const;
@@ -54,15 +85,51 @@ const recalculateCart = (cart: CartState): CartState => ({
   }, 0)
 });
 
-export const useCart = () => {
-  const queryClient = useQueryClient();
+const toCartItem = (item: GuestCartItem): CartItem => ({
+  ...item,
+  totalPriceCents: item.unitPriceCents * item.quantity
+});
 
-  const cartQuery = useQuery({
+const buildGuestCart = (items: GuestCartItem[]): CartState => {
+  const cartItems = items.map(toCartItem);
+
+  return {
+    id: "guest-cart",
+    items: cartItems,
+    subtotalCents: cartItems.reduce((sum, item) => sum + item.totalPriceCents, 0)
+  };
+};
+
+const toGuestCartItem = (payload: UpsertCartItemInput): Omit<GuestCartItem, "id"> => ({
+  productId: payload.productId,
+  variantId: payload.variantId,
+  quantity: payload.quantity,
+  customizationId: payload.customizationId ?? null,
+  currency: payload.currency ?? "RUB",
+  unitPriceCents: payload.unitPriceCents ?? 0,
+  productName: payload.productName ?? "RSH item",
+  variantName: payload.variantName ?? "Стандарт",
+  imageUrl: payload.imageUrl ?? null,
+  customizationPreviewUrl: payload.customizationPreviewUrl ?? null,
+  customizationGarmentType: payload.customizationGarmentType ?? null,
+  customizationColor: payload.customizationColor ?? null
+});
+
+export const useCart = (): UseCartResult => {
+  const queryClient = useQueryClient();
+  const authQuery = useAuth();
+  const guestItems = useGuestCartStore((state) => state.items);
+  const upsertGuestItem = useGuestCartStore((state) => state.upsertItem);
+  const removeGuestItem = useGuestCartStore((state) => state.removeItem);
+  const isAuthenticated = Boolean(authQuery.data?.id);
+
+  const serverCartQuery = useQuery({
     queryKey: cartQueryKey,
-    queryFn: fetchCart
+    queryFn: fetchCart,
+    enabled: isAuthenticated
   });
 
-  const upsertItem = useMutation({
+  const serverUpsertItem = useMutation({
     mutationFn: async (payload: UpsertCartItemInput) => {
       const csrfToken = await ensureCsrfToken();
       const response = await fetch("/api/cart/items", {
@@ -72,7 +139,12 @@ export const useCart = () => {
           "x-csrf-token": csrfToken
         },
         credentials: "include",
-        body: JSON.stringify(payload)
+        body: JSON.stringify({
+          productId: payload.productId,
+          variantId: payload.variantId,
+          quantity: payload.quantity,
+          customizationId: payload.customizationId ?? null
+        })
       });
 
       if (!response.ok) {
@@ -120,7 +192,7 @@ export const useCart = () => {
     }
   });
 
-  const removeItem = useMutation({
+  const serverRemoveItem = useMutation({
     mutationFn: async (itemId: string) => {
       const csrfToken = await ensureCsrfToken();
       const response = await fetch(`/api/cart/items?itemId=${encodeURIComponent(itemId)}`, {
@@ -158,9 +230,69 @@ export const useCart = () => {
     }
   });
 
+  const guestUpsertItem = useMemo<MutationLike<UpsertCartItemInput>>(
+    () => ({
+      isPending: false,
+      mutate: (payload, options) => {
+        upsertGuestItem(toGuestCartItem(payload));
+        void options?.onSuccess?.();
+      }
+    }),
+    [upsertGuestItem]
+  );
+
+  const guestRemoveItem = useMemo<MutationLike<string>>(
+    () => ({
+      isPending: false,
+      mutate: (itemId, options) => {
+        removeGuestItem(itemId);
+        void options?.onSuccess?.();
+      }
+    }),
+    [removeGuestItem]
+  );
+
+  if (!isAuthenticated) {
+    return {
+      data: buildGuestCart(guestItems),
+      isLoading: false,
+      isError: false,
+      isAuthenticated: false,
+      upsertItem: guestUpsertItem,
+      removeItem: guestRemoveItem
+    };
+  }
+
   return {
-    ...cartQuery,
-    upsertItem,
-    removeItem
+    data: serverCartQuery.data,
+    isError: serverCartQuery.isError,
+    isLoading: authQuery.isLoading || serverCartQuery.isLoading,
+    isAuthenticated: true,
+    upsertItem: {
+      isPending: serverUpsertItem.isPending,
+      mutate: (payload, options) => {
+        serverUpsertItem.mutate(payload, {
+          onSuccess: () => {
+            void options?.onSuccess?.();
+          },
+          onError: () => {
+            options?.onError?.();
+          }
+        });
+      }
+    } satisfies MutationLike<UpsertCartItemInput>,
+    removeItem: {
+      isPending: serverRemoveItem.isPending,
+      mutate: (itemId, options) => {
+        serverRemoveItem.mutate(itemId, {
+          onSuccess: () => {
+            void options?.onSuccess?.();
+          },
+          onError: () => {
+            options?.onError?.();
+          }
+        });
+      }
+    } satisfies MutationLike<string>
   };
 };

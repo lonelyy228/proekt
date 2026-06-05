@@ -5,6 +5,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { setCsrfToken } from "@/lib/csrf-client";
+import { mergeGuestCartIntoAccount } from "@/lib/guest-cart-merge";
 
 type RegisterResponse = {
   success: boolean;
@@ -126,6 +127,7 @@ export default function RegisterPage(): JSX.Element {
         twoFactorEnabled: false
       });
       await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+      await mergeGuestCartIntoAccount(queryClient);
       router.push("/profile");
       router.refresh();
     } catch (error: unknown) {

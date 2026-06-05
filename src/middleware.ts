@@ -1,7 +1,7 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
 import { cookieConfig } from "@/config/constants";
 
-const protectedPathPrefixes = ["/profile", "/cart", "/checkout", "/favorites", "/admin"];
+const protectedPathPrefixes = ["/profile", "/checkout", "/favorites", "/admin"];
 const publicApiPaths = [
   "/api/auth/csrf",
   "/api/auth/login",
@@ -81,7 +81,6 @@ export async function middleware(request: NextRequest): Promise<NextResponse> {
 export const config = {
   matcher: [
     "/profile/:path*",
-    "/cart/:path*",
     "/checkout/:path*",
     "/favorites/:path*",
     "/admin/:path*",

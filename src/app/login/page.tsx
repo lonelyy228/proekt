@@ -5,6 +5,7 @@ import { FormEvent, Suspense, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { setCsrfToken } from "@/lib/csrf-client";
+import { mergeGuestCartIntoAccount } from "@/lib/guest-cart-merge";
 
 type LoginResponse = {
   success: boolean;
@@ -72,6 +73,7 @@ const LoginForm = (): JSX.Element => {
         twoFactorEnabled: false
       });
       await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+      await mergeGuestCartIntoAccount(queryClient);
       const defaultPath = payload.data.user.role === "ADMIN" ? "/admin" : "/profile";
       const targetPath = nextPath && isSafePath(nextPath) ? nextPath : defaultPath;
       router.push(targetPath);

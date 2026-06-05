@@ -36,7 +36,7 @@ const CartItemImage = ({ item }: { item: CartItem }): JSX.Element => {
 };
 
 export default function CartPage(): JSX.Element {
-  const { data, isLoading, isError, upsertItem, removeItem } = useCart();
+  const { data, isLoading, isError, isAuthenticated, upsertItem, removeItem } = useCart();
   const isMutating = upsertItem.isPending || removeItem.isPending;
   const subtotalCurrency = useMemo(() => data?.items[0]?.currency ?? "RUB", [data?.items]);
   const totalQuantity = useMemo(() => data?.items.reduce((sum, item) => sum + item.quantity, 0) ?? 0, [data?.items]);
@@ -53,7 +53,15 @@ export default function CartPage(): JSX.Element {
       productId: item.productId,
       variantId: item.variantId,
       quantity,
-      customizationId: item.customizationId ?? null
+      customizationId: item.customizationId ?? null,
+      currency: item.currency,
+      unitPriceCents: item.unitPriceCents,
+      productName: item.productName,
+      variantName: item.variantName,
+      imageUrl: item.imageUrl ?? null,
+      customizationPreviewUrl: item.customizationPreviewUrl ?? null,
+      customizationGarmentType: item.customizationGarmentType ?? null,
+      customizationColor: item.customizationColor ?? null
     });
   };
 
@@ -74,7 +82,7 @@ export default function CartPage(): JSX.Element {
         <h1 className="text-3xl font-semibold">Корзина</h1>
         <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6">
           <p className="font-medium text-destructive">Не удалось загрузить корзину.</p>
-          <p className="mt-2 text-sm text-muted-foreground">Войдите в аккаунт заново или обновите страницу.</p>
+          <p className="mt-2 text-sm text-muted-foreground">Обновите страницу или войдите в аккаунт заново.</p>
           <div className="mt-5 flex flex-wrap gap-2">
             <Link href="/login?next=%2Fcart" className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground">
               Войти
@@ -109,6 +117,15 @@ export default function CartPage(): JSX.Element {
           </div>
         </div>
       </header>
+
+      {!isAuthenticated && data.items.length > 0 ? (
+        <section className="rounded-2xl border border-primary/25 bg-primary/5 p-4 text-sm">
+          <p className="font-medium">Вы собираете заказ как гость.</p>
+          <p className="mt-1 text-muted-foreground">
+            Товары не пропадут: после входа или регистрации мы автоматически перенесём эту корзину в ваш аккаунт.
+          </p>
+        </section>
+      ) : null}
 
       {data.items.length === 0 ? (
         <section className="rounded-2xl border bg-card p-8 text-center shadow-sm">
@@ -220,13 +237,15 @@ export default function CartPage(): JSX.Element {
             </div>
 
             <Link
-              href="/checkout"
+              href={isAuthenticated ? "/checkout" : "/login?next=%2Fcheckout"}
               className="inline-flex w-full justify-center rounded-md bg-primary px-4 py-3 text-sm font-medium text-primary-foreground"
             >
-              Оформить заказ
+              {isAuthenticated ? "Оформить заказ" : "Войти и оформить"}
             </Link>
             <p className="text-xs text-muted-foreground">
-              В демо-режиме заказ можно завершить локально без реальной оплаты. В production подключается Stripe Checkout и webhook.
+              {isAuthenticated
+                ? "В демо-режиме заказ можно завершить локально без реальной оплаты. В production подключается Stripe Checkout и webhook."
+                : "После входа товары из гостевой корзины будут перенесены в аккаунт и останутся доступны в checkout."}
             </p>
           </aside>
         </div>
