@@ -18,6 +18,15 @@ type AdminCategory = {
   slug: string;
 };
 
+type AdminProductImage = {
+  id: string;
+  url: string;
+  alt: string;
+  width: number;
+  height: number;
+  sortOrder: number;
+};
+
 type AdminProductItem = {
   id: string;
   brand: string;
@@ -31,6 +40,7 @@ type AdminProductItem = {
   currency: string;
   tags: string[];
   createdAt: string;
+  images: AdminProductImage[];
   category: {
     id: string;
     name: string;
@@ -56,6 +66,12 @@ type ProductFormState = {
   currency: "USD";
   tagsText: string;
   status: ProductStatus;
+  images: ProductImageFormState[];
+};
+
+type ProductImageFormState = {
+  url: string;
+  alt: string;
 };
 
 type ProductPresetFiltersPayload = {
@@ -106,6 +122,10 @@ type BulkApplyResult = {
 };
 
 const PAGE_SIZE = 20;
+const PRODUCT_IMAGE_SLOT_COUNT = 3;
+
+const createEmptyImageSlots = (): ProductImageFormState[] =>
+  Array.from({ length: PRODUCT_IMAGE_SLOT_COUNT }, () => ({ url: "", alt: "" }));
 
 const initialCreateForm: ProductFormState = {
   brand: "",
@@ -117,7 +137,8 @@ const initialCreateForm: ProductFormState = {
   basePriceCents: 0,
   currency: "USD",
   tagsText: "",
-  status: "ACTIVE"
+  status: "ACTIVE",
+  images: createEmptyImageSlots()
 };
 
 const parseTags = (value: string): string[] =>
@@ -127,6 +148,38 @@ const parseTags = (value: string): string[] =>
     .filter((item) => item.length > 0);
 
 const formatUsdCents = (value: number): string => `$${(value / 100).toFixed(2)}`;
+
+const buildCssImageUrl = (url: string): string => `url(${JSON.stringify(url)})`;
+
+const buildProductImagesPayload = (
+  images: ProductImageFormState[],
+  fallbackName: string
+): Array<{ url: string; alt: string }> =>
+  images
+    .map((image) => ({
+      url: image.url.trim(),
+      alt: image.alt.trim()
+    }))
+    .filter((image) => image.url.length > 0)
+    .slice(0, PRODUCT_IMAGE_SLOT_COUNT)
+    .map((image, index) => ({
+      url: image.url,
+      alt: image.alt || `${fallbackName.trim() || "RSH товар"} фото ${index + 1}`
+    }));
+
+const buildOptimisticProductImages = (
+  productId: string,
+  images: ProductImageFormState[],
+  fallbackName: string
+): AdminProductImage[] =>
+  buildProductImagesPayload(images, fallbackName).map((image, index) => ({
+    id: `${productId}-image-${index}`,
+    url: image.url,
+    alt: image.alt,
+    width: 1200,
+    height: 1200,
+    sortOrder: index
+  }));
 
 const extractErrorMessage = async (response: Response, fallback: string): Promise<string> => {
   try {
@@ -147,7 +200,14 @@ const buildFormFromProduct = (item: AdminProductItem): ProductFormState => ({
   basePriceCents: item.basePriceCents,
   currency: "USD",
   tagsText: item.tags.join(", "),
-  status: item.status
+  status: item.status,
+  images: Array.from({ length: PRODUCT_IMAGE_SLOT_COUNT }, (_, index) => {
+    const image = item.images[index];
+    return {
+      url: image?.url ?? "",
+      alt: image?.alt ?? ""
+    };
+  })
 });
 
 export const AdminProductsManager = (): JSX.Element => {
@@ -430,7 +490,8 @@ export const AdminProductsManager = (): JSX.Element => {
           categoryId: createForm.categoryId,
           basePriceCents: Number(createForm.basePriceCents),
           currency: "USD",
-          tags: parseTags(createForm.tagsText)
+          tags: parseTags(createForm.tagsText),
+          images: buildProductImagesPayload(createForm.images, createForm.name)
         })
       });
 
@@ -470,7 +531,8 @@ export const AdminProductsManager = (): JSX.Element => {
           basePriceCents: Number(payload.form.basePriceCents),
           currency: "USD",
           status: payload.form.status,
-          tags: parseTags(payload.form.tagsText)
+          tags: parseTags(payload.form.tagsText),
+          images: buildProductImagesPayload(payload.form.images, payload.form.name)
         })
       });
 
@@ -504,7 +566,8 @@ export const AdminProductsManager = (): JSX.Element => {
                   categoryId: payload.form.categoryId,
                   basePriceCents: Number(payload.form.basePriceCents),
                   status: payload.form.status,
-                  tags: parseTags(payload.form.tagsText)
+                  tags: parseTags(payload.form.tagsText),
+                  images: buildOptimisticProductImages(payload.productId, payload.form.images, payload.form.name)
                 }
               : item
           )
@@ -1008,6 +1071,50 @@ export const AdminProductsManager = (): JSX.Element => {
             value={createForm.description}
             onChange={(event) => setCreateForm((prev) => ({ ...prev, description: event.target.value }))}
           />
+          <div className="space-y-3 rounded-lg border bg-background/60 p-3 md:col-span-2 xl:col-span-4">
+            <div>
+              <p className="text-sm font-medium">Фото товара</p>
+              <p className="text-xs text-muted-foreground">
+                До 3 изображений. Используй путь /product-images/file.jpg или https:// URL.
+              </p>
+            </div>
+            <div className="grid gap-3 lg:grid-cols-3">
+              {createForm.images.map((image, index) => (
+                <div key={`create-image-${index}`} className="rounded-md border p-2">
+                  <div className="mb-2 h-28 rounded-md border bg-muted bg-cover bg-center"
+                    style={image.url.trim() ? { backgroundImage: buildCssImageUrl(image.url.trim()) } : undefined}
+                    aria-label={`Превью фото ${index + 1}`}
+                  />
+                  <input
+                    className="mb-2 w-full rounded-md border bg-background px-2 py-1 text-xs"
+                    placeholder={`/product-images/product-${index + 1}.jpg`}
+                    value={image.url}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        images: prev.images.map((item, itemIndex) =>
+                          itemIndex === index ? { ...item, url: event.target.value } : item
+                        )
+                      }))
+                    }
+                  />
+                  <input
+                    className="w-full rounded-md border bg-background px-2 py-1 text-xs"
+                    placeholder={`Описание фото ${index + 1}`}
+                    value={image.alt}
+                    onChange={(event) =>
+                      setCreateForm((prev) => ({
+                        ...prev,
+                        images: prev.images.map((item, itemIndex) =>
+                          itemIndex === index ? { ...item, alt: event.target.value } : item
+                        )
+                      }))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
           <button
             type="button"
             className="rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary disabled:opacity-40 md:col-span-2 xl:col-span-1"
@@ -1149,11 +1256,82 @@ export const AdminProductsManager = (): JSX.Element => {
                               }
                               placeholder="Теги через запятую"
                             />
+                            <div className="rounded-lg border bg-background/60 p-2">
+                              <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                Фото товара
+                              </p>
+                              <div className="grid gap-2 lg:grid-cols-3">
+                                {editForm.images.map((image, index) => (
+                                  <div key={`edit-image-${item.id}-${index}`} className="rounded-md border p-2">
+                                    <div
+                                      className="mb-2 h-24 rounded-md border bg-muted bg-cover bg-center"
+                                      style={
+                                        image.url.trim()
+                                          ? { backgroundImage: buildCssImageUrl(image.url.trim()) }
+                                          : undefined
+                                      }
+                                      aria-label={`Превью фото ${index + 1}`}
+                                    />
+                                    <input
+                                      className="mb-2 w-full rounded-md border bg-background px-2 py-1 text-xs"
+                                      placeholder={`/product-images/${item.slug}-${index + 1}.jpg`}
+                                      value={image.url}
+                                      onChange={(event) =>
+                                        setEditForm((prev) =>
+                                          prev
+                                            ? {
+                                                ...prev,
+                                                images: prev.images.map((slot, slotIndex) =>
+                                                  slotIndex === index ? { ...slot, url: event.target.value } : slot
+                                                )
+                                              }
+                                            : prev
+                                        )
+                                      }
+                                    />
+                                    <input
+                                      className="w-full rounded-md border bg-background px-2 py-1 text-xs"
+                                      placeholder={`Alt ${index + 1}`}
+                                      value={image.alt}
+                                      onChange={(event) =>
+                                        setEditForm((prev) =>
+                                          prev
+                                            ? {
+                                                ...prev,
+                                                images: prev.images.map((slot, slotIndex) =>
+                                                  slotIndex === index ? { ...slot, alt: event.target.value } : slot
+                                                )
+                                              }
+                                            : prev
+                                        )
+                                      }
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
                           </div>
                         ) : (
                           <div>
                             <p className="font-medium">{item.name}</p>
                             <p className="text-xs text-muted-foreground">/{item.slug}</p>
+                            <div className="mt-2 flex gap-1.5">
+                              {item.images.length > 0 ? (
+                                item.images.slice(0, PRODUCT_IMAGE_SLOT_COUNT).map((image) => (
+                                  <div
+                                    key={image.id}
+                                    className="h-12 w-12 rounded-md border bg-muted bg-cover bg-center"
+                                    style={{ backgroundImage: buildCssImageUrl(image.url) }}
+                                    title={image.alt}
+                                    aria-label={image.alt}
+                                  />
+                                ))
+                              ) : (
+                                <span className="rounded-full border px-2 py-1 text-[11px] text-muted-foreground">
+                                  Нет фото
+                                </span>
+                              )}
+                            </div>
                           </div>
                         )}
                       </td>

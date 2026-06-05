@@ -1,6 +1,34 @@
 import { Prisma, ProductStatus } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 
+type ProductImageInput = {
+  url: string;
+  alt: string;
+};
+
+const productImageSelect = {
+  id: true,
+  url: true,
+  alt: true,
+  width: true,
+  height: true,
+  sortOrder: true
+} satisfies Prisma.ProductImageSelect;
+
+const adminProductInclude = {
+  category: {
+    select: {
+      id: true,
+      name: true
+    }
+  },
+  images: {
+    orderBy: { sortOrder: "asc" },
+    take: 3,
+    select: productImageSelect
+  }
+} satisfies Prisma.ProductInclude;
+
 export const productRepository = {
   findCatalog: (args: {
     where: Prisma.ProductWhereInput;
@@ -79,6 +107,31 @@ export const productRepository = {
 
   createProduct: (data: Prisma.ProductCreateInput) => prisma.product.create({ data }),
 
+  replaceProductImages: (productId: string, images: ProductImageInput[]) =>
+    prisma.$transaction(async (tx) => {
+      await tx.productImage.deleteMany({
+        where: { productId }
+      });
+
+      if (images.length > 0) {
+        await tx.productImage.createMany({
+          data: images.slice(0, 3).map((image, index) => ({
+            productId,
+            url: image.url,
+            alt: image.alt,
+            width: 1200,
+            height: 1200,
+            sortOrder: index
+          }))
+        });
+      }
+
+      return tx.product.findUniqueOrThrow({
+        where: { id: productId },
+        include: adminProductInclude
+      });
+    }),
+
   findById: (id: string) =>
     prisma.product.findFirst({
       where: {
@@ -134,14 +187,7 @@ export const productRepository = {
             ]
           : undefined
       },
-      include: {
-        category: {
-          select: {
-            id: true,
-            name: true
-          }
-        }
-      },
+      include: adminProductInclude,
       skip: params.skip,
       take: params.take,
       orderBy: params.orderBy
