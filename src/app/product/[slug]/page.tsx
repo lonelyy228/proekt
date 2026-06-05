@@ -6,6 +6,7 @@ import { getBrandProfile } from "@/features/catalog/brand-profile";
 import { brandToSlug } from "@/features/catalog/brand-directory";
 import { ProductImageGallery } from "@/features/catalog/components/product-image-gallery";
 import { ProductPurchasePanel } from "@/features/catalog/components/product-purchase-panel";
+import { WishlistToggleButton } from "@/features/wishlist/components/wishlist-toggle-button";
 import { formatStoreMoney } from "@/lib/currency";
 import { productService } from "@/server/services/product-service";
 
@@ -59,7 +60,10 @@ export default async function ProductPage({ params }: { params: { slug: string }
             {product.name}
           </h1>
           <p className="text-muted-foreground">{product.description}</p>
-          <p className="text-2xl font-semibold">{formatStoreMoney(product.basePriceCents, product.currency)}</p>
+          <div className="flex flex-col gap-3 rounded-xl border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-2xl font-semibold">{formatStoreMoney(product.basePriceCents, product.currency)}</p>
+            <WishlistToggleButton productId={product.id} productName={product.name} loginRedirectPath={`/product/${product.slug}`} />
+          </div>
 
           <ProductPurchasePanel
             product={{
