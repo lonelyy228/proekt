@@ -940,6 +940,10 @@ export const adminService = {
       basePriceCents: number;
       currency: "USD";
       tags: string[];
+      images?: Array<{
+        url: string;
+        alt: string;
+      }>;
     }
   ) => {
     const product = await productService.createAdminProduct(payload);
@@ -1070,6 +1074,10 @@ export const adminService = {
       currency?: "USD";
       status?: ProductStatus;
       tags?: string[];
+      images?: Array<{
+        url: string;
+        alt: string;
+      }>;
     }
   ) => {
     const result = await productService.updateAdminProductById(productId, payload);

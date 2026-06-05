@@ -4,6 +4,17 @@ import { sanitizeText } from "@/server/utils/sanitize";
 import { AppError } from "@/server/utils/errors";
 import { invalidateCatalogCache, invalidateProductCache } from "@/lib/cache";
 
+type ProductImageInput = {
+  url: string;
+  alt: string;
+};
+
+const sanitizeProductImages = (images?: ProductImageInput[]): ProductImageInput[] | undefined =>
+  images?.slice(0, 3).map((image) => ({
+    url: image.url.trim(),
+    alt: sanitizeText(image.alt)
+  }));
+
 const resolveCustomizerGarmentType = (tags: string[]): "TSHIRT" | "HOODIE" | "SWEATSHIRT" | "SHORTS" | "PANTS" => {
   if (tags.includes("hoodie")) {
     return "HOODIE";
@@ -228,6 +239,7 @@ export const productService = {
     basePriceCents: number;
     currency: "USD";
     tags: string[];
+    images?: ProductImageInput[];
   }) => {
     const category = await productRepository.findCategoryById(payload.categoryId);
     if (!category) {
@@ -252,10 +264,13 @@ export const productService = {
       status: ProductStatus.ACTIVE
     });
 
-    invalidateCatalogCache();
-    invalidateProductCache(created.slug);
+    const images = sanitizeProductImages(payload.images);
+    const product = images ? await productRepository.replaceProductImages(created.id, images) : created;
 
-    return created;
+    invalidateCatalogCache();
+    invalidateProductCache(product.slug);
+
+    return product;
   },
 
   updateAdminProductById: async (
@@ -271,6 +286,7 @@ export const productService = {
       currency?: "USD";
       status?: ProductStatus;
       tags?: string[];
+      images?: ProductImageInput[];
     }
   ) => {
     const current = await productRepository.findById(productId);
@@ -292,7 +308,7 @@ export const productService = {
       }
     }
 
-    const updated = await productRepository.updateProductById(productId, {
+    const updatedProduct = await productRepository.updateProductById(productId, {
       brand: payload.brand ? sanitizeText(payload.brand) : undefined,
       name: payload.name ? sanitizeText(payload.name) : undefined,
       slug: payload.slug,
@@ -309,6 +325,11 @@ export const productService = {
       status: payload.status,
       tags: payload.tags ? payload.tags.map((tag) => sanitizeText(tag)) : undefined
     });
+
+    const images = sanitizeProductImages(payload.images);
+    const updated = images
+      ? await productRepository.replaceProductImages(productId, images)
+      : updatedProduct;
 
     invalidateCatalogCache();
     invalidateProductCache(current.slug);

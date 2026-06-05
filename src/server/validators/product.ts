@@ -22,6 +22,21 @@ export const productQuerySchema = z.object({
   return true;
 }, "Некорректный диапазон цен");
 
+const productImageUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(600)
+  .refine(
+    (value) => value.startsWith("/product-images/") || value.startsWith("https://"),
+    "Image URL must be a /product-images/ path or an https:// URL"
+  );
+
+export const productImageInputSchema = z.object({
+  url: productImageUrlSchema,
+  alt: z.string().trim().min(1).max(160)
+});
+
 export const productCreateSchema = z.object({
   brand: z.string().min(2).max(80),
   name: z.string().min(2).max(180),
@@ -31,7 +46,8 @@ export const productCreateSchema = z.object({
   categoryId: z.string().cuid(),
   basePriceCents: z.number().int().nonnegative(),
   currency: z.literal("USD"),
-  tags: z.array(z.string().min(1).max(40)).max(12)
+  tags: z.array(z.string().min(1).max(40)).max(12),
+  images: z.array(productImageInputSchema).max(3).optional()
 });
 
 export const adminProductListQuerySchema = z.object({
@@ -54,5 +70,6 @@ export const productUpdateSchema = z.object({
   basePriceCents: z.number().int().nonnegative().optional(),
   currency: z.literal("USD").optional(),
   status: z.nativeEnum(ProductStatus).optional(),
-  tags: z.array(z.string().min(1).max(40)).max(12).optional()
+  tags: z.array(z.string().min(1).max(40)).max(12).optional(),
+  images: z.array(productImageInputSchema).max(3).optional()
 });
