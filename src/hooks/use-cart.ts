@@ -33,10 +33,11 @@ type UpsertCartItemInput = {
   customizationId?: string | null;
 };
 
-const cartQueryKey = ["cart"] as const;
+export const cartQueryKey = ["cart"] as const;
 
 const fetchCart = async (): Promise<CartState> => {
   const response = await fetch("/api/cart", { credentials: "include" });
+
   if (!response.ok) {
     throw new Error("Не удалось загрузить корзину");
   }

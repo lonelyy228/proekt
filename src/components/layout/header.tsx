@@ -16,8 +16,7 @@ const primaryLinks = [
   { href: "/cart", label: "Корзина" }
 ] as const;
 
-const isActivePath = (pathname: string, href: string): boolean =>
-  pathname === href || pathname.startsWith(`${href}/`);
+const isActivePath = (pathname: string, href: string): boolean => pathname === href || pathname.startsWith(`${href}/`);
 
 export const Header = (): JSX.Element => {
   const router = useRouter();
@@ -51,6 +50,8 @@ export const Header = (): JSX.Element => {
       clearCsrfToken();
       queryClient.setQueryData(["auth", "me"], null);
       await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+      await queryClient.invalidateQueries({ queryKey: ["cart"] });
+      await queryClient.invalidateQueries({ queryKey: ["wishlist"] });
       setIsLoggingOut(false);
       router.push("/");
       router.refresh();
@@ -75,9 +76,7 @@ export const Header = (): JSX.Element => {
             href={profilePath}
             className={cn(
               "rounded-full border px-4 py-2 text-sm font-medium transition hover:border-primary hover:bg-primary hover:text-primary-foreground",
-              isActivePath(pathname, profilePath)
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border bg-background"
+              isActivePath(pathname, profilePath) ? "border-primary bg-primary text-primary-foreground" : "border-border bg-background"
             )}
           >
             {user.role === "ADMIN" ? "Админ" : "Профиль"}
@@ -143,24 +142,9 @@ export const Header = (): JSX.Element => {
           onClick={() => setIsMenuOpen((value) => !value)}
         >
           <span className="relative block h-3.5 w-5">
-            <span
-              className={cn(
-                "absolute left-0 top-0 h-px w-5 bg-primary transition",
-                isMenuOpen && "top-1.5 rotate-45"
-              )}
-            />
-            <span
-              className={cn(
-                "absolute left-0 top-1.5 h-px w-5 bg-primary transition",
-                isMenuOpen && "opacity-0"
-              )}
-            />
-            <span
-              className={cn(
-                "absolute bottom-0 left-0 h-px w-5 bg-primary transition",
-                isMenuOpen && "bottom-2 -rotate-45"
-              )}
-            />
+            <span className={cn("absolute left-0 top-0 h-px w-5 bg-primary transition", isMenuOpen && "top-1.5 rotate-45")} />
+            <span className={cn("absolute left-0 top-1.5 h-px w-5 bg-primary transition", isMenuOpen && "opacity-0")} />
+            <span className={cn("absolute bottom-0 left-0 h-px w-5 bg-primary transition", isMenuOpen && "bottom-2 -rotate-45")} />
           </span>
         </button>
 
