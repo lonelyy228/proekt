@@ -3,9 +3,19 @@
 import Link from "next/link";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
+import { setCsrfToken } from "@/lib/csrf-client";
 
 type RegisterResponse = {
   success: boolean;
+  data?: {
+    user: {
+      id: string;
+      email: string;
+      role: "USER" | "ADMIN";
+    };
+    csrfToken: string;
+  };
   error?: {
     message: string;
     details?: string[];
@@ -28,6 +38,7 @@ type PasswordRequirement = {
 
 export default function RegisterPage(): JSX.Element {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [confirmPassword, setConfirmPassword] = useState<string>("");
@@ -103,11 +114,20 @@ export default function RegisterPage(): JSX.Element {
 
       const payload = (await response.json()) as RegisterResponse;
 
-      if (!response.ok || !payload.success) {
+      if (!response.ok || !payload.success || !payload.data) {
         throw new Error(readableValidationMessage(payload));
       }
 
-      router.push("/login?registered=1");
+      setCsrfToken(payload.data.csrfToken);
+      queryClient.setQueryData(["auth", "me"], {
+        id: payload.data.user.id,
+        email: payload.data.user.email,
+        role: payload.data.user.role,
+        twoFactorEnabled: false
+      });
+      await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+      router.push("/profile");
+      router.refresh();
     } catch (error: unknown) {
       setErrorMessage(error instanceof Error ? error.message : "Ошибка регистрации. Попробуйте позже.");
     } finally {
