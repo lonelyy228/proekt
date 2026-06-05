@@ -70,6 +70,7 @@ export default async function ProductPage({ params }: { params: { slug: string }
               id: product.id,
               name: product.name,
               brand: product.brand,
+              imageUrl: galleryImages[0]?.url ?? null,
               isBaseCustomizerProduct
             }}
             variants={product.variants.map((variant) => ({
