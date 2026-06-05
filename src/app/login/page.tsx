@@ -3,12 +3,15 @@
 import Link from "next/link";
 import { FormEvent, Suspense, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import { setCsrfToken } from "@/lib/csrf-client";
 
 type LoginResponse = {
   success: boolean;
   data?: {
     user: {
+      id: string;
+      email: string;
       role: "USER" | "ADMIN";
     };
     csrfToken: string;
@@ -23,6 +26,7 @@ const isSafePath = (value: string): boolean => value.startsWith("/") && !value.s
 const LoginForm = (): JSX.Element => {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const queryClient = useQueryClient();
   const nextPath = searchParams.get("next");
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
@@ -61,6 +65,13 @@ const LoginForm = (): JSX.Element => {
       }
 
       setCsrfToken(payload.data.csrfToken);
+      queryClient.setQueryData(["auth", "me"], {
+        id: payload.data.user.id,
+        email: payload.data.user.email,
+        role: payload.data.user.role,
+        twoFactorEnabled: false
+      });
+      await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
       const defaultPath = payload.data.user.role === "ADMIN" ? "/admin" : "/profile";
       const targetPath = nextPath && isSafePath(nextPath) ? nextPath : defaultPath;
       router.push(targetPath);
