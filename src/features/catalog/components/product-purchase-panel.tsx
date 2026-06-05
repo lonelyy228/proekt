@@ -1,11 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { ensureCsrfToken } from "@/lib/csrf-client";
 import { formatStoreMoney } from "@/lib/currency";
+import { useCart } from "@/hooks/use-cart";
 
 type ProductVariantOption = {
   id: string;
@@ -22,35 +21,15 @@ type ProductPurchasePanelProps = {
     id: string;
     name: string;
     brand: string;
+    imageUrl?: string | null;
     isBaseCustomizerProduct: boolean;
   };
   variants: ProductVariantOption[];
 };
 
-type ApiErrorPayload = {
-  success: false;
-  error?: {
-    code?: string;
-    message?: string;
-  };
-};
-
-const parseCartError = async (response: Response): Promise<string> => {
-  if (response.status === 401) {
-    return "Чтобы добавить товар в корзину, сначала войдите в аккаунт.";
-  }
-
-  try {
-    const payload = (await response.json()) as ApiErrorPayload;
-    return payload.error?.message ?? "Не удалось добавить товар в корзину.";
-  } catch {
-    return "Не удалось добавить товар в корзину.";
-  }
-};
-
 export const ProductPurchasePanel = ({ product, variants }: ProductPurchasePanelProps): JSX.Element => {
-  const router = useRouter();
   const queryClient = useQueryClient();
+  const { isAuthenticated, upsertItem } = useCart();
   const [selectedVariantId, setSelectedVariantId] = useState(
     variants.find((variant) => variant.isDefault)?.id ?? variants[0]?.id ?? ""
   );
@@ -64,7 +43,7 @@ export const ProductPurchasePanel = ({ product, variants }: ProductPurchasePanel
     [selectedVariantId, variants]
   );
 
-  const canSubmit = Boolean(selectedVariant) && quantity >= 1 && quantity <= 50 && !isPending;
+  const canSubmit = Boolean(selectedVariant) && quantity >= 1 && quantity <= 50 && !isPending && !upsertItem.isPending;
 
   const addToCart = (): void => {
     if (!selectedVariant || !canSubmit) {
@@ -74,39 +53,35 @@ export const ProductPurchasePanel = ({ product, variants }: ProductPurchasePanel
     setMessage(null);
     setMessageType(null);
 
-    startTransition(async () => {
-      try {
-        const csrfToken = await ensureCsrfToken();
-        const response = await fetch("/api/cart/items", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "x-csrf-token": csrfToken
+    startTransition(() => {
+      upsertItem.mutate(
+        {
+          productId: product.id,
+          variantId: selectedVariant.id,
+          quantity,
+          customizationId: null,
+          currency: selectedVariant.currency,
+          unitPriceCents: selectedVariant.priceCents,
+          productName: product.name,
+          variantName: selectedVariant.name,
+          imageUrl: product.imageUrl ?? null
+        },
+        {
+          onSuccess: async () => {
+            await queryClient.invalidateQueries({ queryKey: ["cart"] });
+            setMessage(
+              isAuthenticated
+                ? "Товар добавлен в корзину. Можно продолжить покупки или перейти к оформлению."
+                : "Товар добавлен во временную корзину. После входа мы перенесём его в ваш аккаунт."
+            );
+            setMessageType("success");
           },
-          credentials: "include",
-          body: JSON.stringify({
-            productId: product.id,
-            variantId: selectedVariant.id,
-            quantity,
-            customizationId: null
-          })
-        });
-
-        if (!response.ok) {
-          const errorMessage = await parseCartError(response);
-          setMessage(errorMessage);
-          setMessageType("error");
-          return;
+          onError: () => {
+            setMessage("Не удалось добавить товар в корзину. Проверьте соединение и попробуйте снова.");
+            setMessageType("error");
+          }
         }
-
-        await queryClient.invalidateQueries({ queryKey: ["cart"] });
-        setMessage("Товар добавлен в корзину. Можно продолжить покупки или перейти к оформлению.");
-        setMessageType("success");
-        router.refresh();
-      } catch {
-        setMessage("Не удалось добавить товар в корзину. Проверьте соединение и попробуйте снова.");
-        setMessageType("error");
-      }
+      );
     });
   };
 
@@ -193,7 +168,7 @@ export const ProductPurchasePanel = ({ product, variants }: ProductPurchasePanel
           disabled={!canSubmit}
           className="rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          {isPending ? "Добавляем..." : "Добавить в корзину"}
+          {isPending || upsertItem.isPending ? "Добавляем..." : "Добавить в корзину"}
         </button>
       </div>
 
@@ -226,11 +201,6 @@ export const ProductPurchasePanel = ({ product, variants }: ProductPurchasePanel
                 Продолжить покупки
               </Link>
             </div>
-          ) : null}
-          {messageType === "error" ? (
-            <Link href="/login" className="mt-2 inline-block text-primary underline-offset-2 hover:underline">
-              Войти в аккаунт
-            </Link>
           ) : null}
         </div>
       ) : null}
