@@ -7,6 +7,7 @@ import { ensureCsrfToken } from "@/lib/csrf-client";
 import { formatStoreMoney } from "@/lib/currency";
 
 type GarmentType = "TSHIRT" | "HOODIE" | "SHORTS";
+type GarmentSide = "FRONT" | "BACK";
 
 type LayerItem = {
   layerPosition: number;
@@ -59,7 +60,6 @@ type PrintArea = {
 type GarmentTemplate = {
   code: GarmentType;
   label: string;
-  technicalLabel: string;
   hint: string;
   printArea: PrintArea;
 };
@@ -80,33 +80,34 @@ const GARMENT_TEMPLATES: Record<GarmentType, GarmentTemplate> = {
   TSHIRT: {
     code: "TSHIRT",
     label: "Футболка",
-    technicalLabel: "Front",
     hint: "Печатная зона футболки",
     printArea: { left: 286, top: 282, width: 188, height: 224 }
   },
   HOODIE: {
     code: "HOODIE",
     label: "Худи",
-    technicalLabel: "Front",
     hint: "Печатная зона худи",
     printArea: { left: 278, top: 302, width: 204, height: 230 }
   },
   SHORTS: {
     code: "SHORTS",
     label: "Шорты",
-    technicalLabel: "Front",
     hint: "Печатная зона шорт",
     printArea: { left: 278, top: 292, width: 204, height: 170 }
   }
 };
 const GARMENT_OPTIONS: GarmentType[] = ["TSHIRT", "HOODIE", "SHORTS"];
+const GARMENT_SIDE_OPTIONS: GarmentSide[] = ["FRONT", "BACK"];
+const GARMENT_SIDE_LABELS: Record<GarmentSide, string> = {
+  FRONT: "Перед",
+  BACK: "Спина"
+};
 const GARMENT_COLORS = ["#f4f1ea", "#f7f7f2", "#111111", "#2b2b2b", "#5c564f", "#9b111e", "#1f3d72", "#7c8f7a"];
 const FONT_FAMILIES = ["Space Grotesk", "Arial", "Times New Roman", "Courier New", "Georgia"];
 const TEXT_COLORS = ["#111111", "#ffffff", "#d91b3a", "#214fce", "#0f8a5f", "#f29f05", "#7a3cff"];
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
-type TemplateAsset = {
-  src: string;
+type TemplateViewAsset = {
   crop: { x: number; y: number; width: number; height: number };
   printAreaRatio: { left: number; top: number; width: number; height: number };
   fillSeedRatios: Array<{ x: number; y: number }>;
@@ -118,6 +119,11 @@ type TemplateAsset = {
     shadow: string;
     lines: string;
   };
+};
+
+type TemplateAsset = {
+  src: string;
+  views: Record<GarmentSide, TemplateViewAsset>;
 };
 
 type RasterTemplateResult = {
@@ -132,56 +138,101 @@ type RasterTemplateResult = {
 const TEMPLATE_ASSETS: Record<GarmentType, TemplateAsset> = {
   TSHIRT: {
     src: "/editor/templates/tshirt.jpg",
-    crop: { x: 0, y: 0, width: 0.39, height: 1 },
-    printAreaRatio: { left: 0.24, top: 0.22, width: 0.52, height: 0.58 },
-    fillSeedRatios: [
-      { x: 0.5, y: 0.52 },
-      { x: 0.24, y: 0.34 },
-      { x: 0.76, y: 0.34 }
-    ],
-    maxWidth: 460,
-    maxHeight: 500,
-    layered: {
-      base: "/editor/templates/layers/tshirt/tshirt-front-base.png",
-      mask: "/editor/templates/layers/tshirt/tshirt-front-mask.png",
-      shadow: "/editor/templates/layers/tshirt/tshirt-front-shadow.png",
-      lines: "/editor/templates/layers/tshirt/tshirt-front-lines.png"
+    views: {
+      FRONT: {
+        crop: { x: 0, y: 0, width: 0.39, height: 1 },
+        printAreaRatio: { left: 0.24, top: 0.22, width: 0.52, height: 0.58 },
+        fillSeedRatios: [
+          { x: 0.5, y: 0.52 },
+          { x: 0.24, y: 0.34 },
+          { x: 0.76, y: 0.34 }
+        ],
+        maxWidth: 460,
+        maxHeight: 500,
+        layered: {
+          base: "/editor/templates/layers/tshirt/tshirt-front-base.png",
+          mask: "/editor/templates/layers/tshirt/tshirt-front-mask.png",
+          shadow: "/editor/templates/layers/tshirt/tshirt-front-shadow.png",
+          lines: "/editor/templates/layers/tshirt/tshirt-front-lines.png"
+        }
+      },
+      BACK: {
+        crop: { x: 0.52, y: 0, width: 0.39, height: 1 },
+        printAreaRatio: { left: 0.24, top: 0.22, width: 0.52, height: 0.6 },
+        fillSeedRatios: [
+          { x: 0.5, y: 0.52 },
+          { x: 0.24, y: 0.34 },
+          { x: 0.76, y: 0.34 }
+        ],
+        maxWidth: 460,
+        maxHeight: 500
+      }
     }
   },
   HOODIE: {
     src: "/editor/templates/hoodie.jpg",
-    crop: { x: 0, y: 0, width: 0.4, height: 1 },
-    printAreaRatio: { left: 0.24, top: 0.24, width: 0.52, height: 0.54 },
-    fillSeedRatios: [
-      { x: 0.5, y: 0.54 },
-      { x: 0.2, y: 0.6 },
-      { x: 0.8, y: 0.6 },
-      { x: 0.5, y: 0.18 }
-    ],
-    maxWidth: 500,
-    maxHeight: 560,
-    layered: {
-      base: "/editor/templates/layers/hoodie/hoodie-front-base.png",
-      mask: "/editor/templates/layers/hoodie/hoodie-front-mask.png",
-      shadow: "/editor/templates/layers/hoodie/hoodie-front-shadow.png",
-      lines: "/editor/templates/layers/hoodie/hoodie-front-lines.png"
+    views: {
+      FRONT: {
+        crop: { x: 0, y: 0, width: 0.4, height: 1 },
+        printAreaRatio: { left: 0.24, top: 0.24, width: 0.52, height: 0.54 },
+        fillSeedRatios: [
+          { x: 0.5, y: 0.54 },
+          { x: 0.2, y: 0.6 },
+          { x: 0.8, y: 0.6 },
+          { x: 0.5, y: 0.18 }
+        ],
+        maxWidth: 500,
+        maxHeight: 560,
+        layered: {
+          base: "/editor/templates/layers/hoodie/hoodie-front-base.png",
+          mask: "/editor/templates/layers/hoodie/hoodie-front-mask.png",
+          shadow: "/editor/templates/layers/hoodie/hoodie-front-shadow.png",
+          lines: "/editor/templates/layers/hoodie/hoodie-front-lines.png"
+        }
+      },
+      BACK: {
+        crop: { x: 0.52, y: 0, width: 0.4, height: 1 },
+        printAreaRatio: { left: 0.24, top: 0.24, width: 0.52, height: 0.54 },
+        fillSeedRatios: [
+          { x: 0.5, y: 0.54 },
+          { x: 0.18, y: 0.58 },
+          { x: 0.82, y: 0.58 },
+          { x: 0.5, y: 0.18 }
+        ],
+        maxWidth: 500,
+        maxHeight: 560
+      }
     }
   },
   SHORTS: {
     src: "/editor/templates/shorts.jpg",
-    crop: { x: 0, y: 0, width: 0.52, height: 1 },
-    printAreaRatio: { left: 0.18, top: 0.22, width: 0.64, height: 0.54 },
-    fillSeedRatios: [
-      { x: 0.35, y: 0.5 },
-      { x: 0.65, y: 0.5 }
-    ],
-    maxWidth: 480,
-    maxHeight: 380,
-    layered: {
-      base: "/editor/templates/layers/shorts/shorts-front-base.png",
-      mask: "/editor/templates/layers/shorts/shorts-front-mask.png",
-      shadow: "/editor/templates/layers/shorts/shorts-front-shadow.png",
-      lines: "/editor/templates/layers/shorts/shorts-front-lines.png"
+    views: {
+      FRONT: {
+        crop: { x: 0, y: 0, width: 0.52, height: 1 },
+        printAreaRatio: { left: 0.18, top: 0.22, width: 0.64, height: 0.54 },
+        fillSeedRatios: [
+          { x: 0.35, y: 0.5 },
+          { x: 0.65, y: 0.5 }
+        ],
+        maxWidth: 480,
+        maxHeight: 380,
+        layered: {
+          base: "/editor/templates/layers/shorts/shorts-front-base.png",
+          mask: "/editor/templates/layers/shorts/shorts-front-mask.png",
+          shadow: "/editor/templates/layers/shorts/shorts-front-shadow.png",
+          lines: "/editor/templates/layers/shorts/shorts-front-lines.png"
+        }
+      },
+      BACK: {
+        crop: { x: 0.5, y: 0, width: 0.46, height: 1 },
+        printAreaRatio: { left: 0.18, top: 0.22, width: 0.64, height: 0.54 },
+        fillSeedRatios: [
+          { x: 0.35, y: 0.5 },
+          { x: 0.65, y: 0.5 }
+        ],
+        maxWidth: 480,
+        maxHeight: 380
+      }
     }
   }
 };
@@ -293,16 +344,21 @@ const loadHtmlImage = async (src: string): Promise<HTMLImageElement> => {
   return loaded;
 };
 
-const buildRasterTemplate = async (garmentType: GarmentType, garmentColor: string): Promise<RasterTemplateResult> => {
+const buildRasterTemplate = async (
+  garmentType: GarmentType,
+  garmentSide: GarmentSide,
+  garmentColor: string
+): Promise<RasterTemplateResult> => {
   const asset = TEMPLATE_ASSETS[garmentType];
+  const view = asset.views[garmentSide];
   const [colorR, colorG, colorB] = parseHexColor(garmentColor);
 
-  if (asset.layered) {
+  if (view.layered) {
     const [baseImage, maskImage, shadowImage, linesImage] = await Promise.all([
-      loadHtmlImage(asset.layered.base),
-      loadHtmlImage(asset.layered.mask),
-      loadHtmlImage(asset.layered.shadow),
-      loadHtmlImage(asset.layered.lines)
+      loadHtmlImage(view.layered.base),
+      loadHtmlImage(view.layered.mask),
+      loadHtmlImage(view.layered.shadow),
+      loadHtmlImage(view.layered.lines)
     ]);
 
     const sourceCanvas = document.createElement("canvas");
@@ -382,7 +438,7 @@ const buildRasterTemplate = async (garmentType: GarmentType, garmentColor: strin
     const cropWidth = clamp(maxX - minX + 1 + padding * 2, 1, sourceCanvas.width - cropX);
     const cropHeight = clamp(maxY - minY + 1 + padding * 2, 1, sourceCanvas.height - cropY);
 
-    const scale = Math.min(asset.maxWidth / cropWidth, asset.maxHeight / cropHeight);
+    const scale = Math.min(view.maxWidth / cropWidth, view.maxHeight / cropHeight);
     const renderWidth = Math.max(1, Math.round(cropWidth * scale));
     const renderHeight = Math.max(1, Math.round(cropHeight * scale));
 
@@ -398,12 +454,12 @@ const buildRasterTemplate = async (garmentType: GarmentType, garmentColor: strin
     context.drawImage(sourceCanvas, cropX, cropY, cropWidth, cropHeight, 0, 0, renderWidth, renderHeight);
 
     const left = Math.round((CANVAS_DIMENSION - renderWidth) / 2);
-    const top = Math.max(48, Math.round((CANVAS_DIMENSION - renderHeight) / 2) - 36);
+    const top = Math.round((CANVAS_DIMENSION - renderHeight) / 2);
     const printArea: PrintArea = {
-      left: left + Math.round(renderWidth * asset.printAreaRatio.left),
-      top: top + Math.round(renderHeight * asset.printAreaRatio.top),
-      width: Math.round(renderWidth * asset.printAreaRatio.width),
-      height: Math.round(renderHeight * asset.printAreaRatio.height)
+      left: left + Math.round(renderWidth * view.printAreaRatio.left),
+      top: top + Math.round(renderHeight * view.printAreaRatio.top),
+      width: Math.round(renderWidth * view.printAreaRatio.width),
+      height: Math.round(renderHeight * view.printAreaRatio.height)
     };
 
     return {
@@ -418,12 +474,12 @@ const buildRasterTemplate = async (garmentType: GarmentType, garmentColor: strin
 
   const source = await loadHtmlImage(asset.src);
 
-  const cropX = Math.floor(source.width * asset.crop.x);
-  const cropY = Math.floor(source.height * asset.crop.y);
-  const cropWidth = Math.max(1, Math.floor(source.width * asset.crop.width));
-  const cropHeight = Math.max(1, Math.floor(source.height * asset.crop.height));
+  const cropX = Math.floor(source.width * view.crop.x);
+  const cropY = Math.floor(source.height * view.crop.y);
+  const cropWidth = Math.max(1, Math.floor(source.width * view.crop.width));
+  const cropHeight = Math.max(1, Math.floor(source.height * view.crop.height));
 
-  const scale = Math.min(asset.maxWidth / cropWidth, asset.maxHeight / cropHeight);
+  const scale = Math.min(view.maxWidth / cropWidth, view.maxHeight / cropHeight);
   const renderWidth = Math.max(1, Math.round(cropWidth * scale));
   const renderHeight = Math.max(1, Math.round(cropHeight * scale));
 
@@ -448,7 +504,7 @@ const buildRasterTemplate = async (garmentType: GarmentType, garmentColor: strin
   const maxReachPixels = fullWidth * fullHeight * 0.72;
   let reachedPixels = 0;
 
-  for (const seed of asset.fillSeedRatios) {
+  for (const seed of view.fillSeedRatios) {
     const seedX = clamp(Math.round(fullWidth * seed.x), 0, fullWidth - 1);
     const seedY = clamp(Math.round(fullHeight * seed.y), 0, fullHeight - 1);
     const seedIndex = (seedY * fullWidth + seedX) * 4;
@@ -555,14 +611,15 @@ const buildRasterTemplate = async (garmentType: GarmentType, garmentColor: strin
     trimmedWidth,
     trimmedHeight
   );
+  applySyntheticGarmentDepth(preparedContext, trimmedWidth, trimmedHeight, garmentType);
 
   const left = Math.round((CANVAS_DIMENSION - trimmedWidth) / 2);
-  const top = Math.max(40, Math.round((CANVAS_DIMENSION - trimmedHeight) / 2));
+  const top = Math.round((CANVAS_DIMENSION - trimmedHeight) / 2);
   const printArea: PrintArea = {
-    left: left + Math.round(trimmedWidth * asset.printAreaRatio.left),
-    top: top + Math.round(trimmedHeight * asset.printAreaRatio.top),
-    width: Math.round(trimmedWidth * asset.printAreaRatio.width),
-    height: Math.round(trimmedHeight * asset.printAreaRatio.height)
+    left: left + Math.round(trimmedWidth * view.printAreaRatio.left),
+    top: top + Math.round(trimmedHeight * view.printAreaRatio.top),
+    width: Math.round(trimmedWidth * view.printAreaRatio.width),
+    height: Math.round(trimmedHeight * view.printAreaRatio.height)
   };
 
   return {
@@ -641,6 +698,17 @@ const constrainInsidePrintArea = (object: FabricObject, printArea: PrintArea, sn
   object.setCoords();
 };
 
+const centerObjectInPrintArea = (object: FabricObject, printArea: PrintArea): void => {
+  const objectWidth = getScaledObjectWidth(object);
+  const objectHeight = getScaledObjectHeight(object);
+
+  object.set({
+    left: Math.round(printArea.left + (printArea.width - objectWidth) / 2),
+    top: Math.round(printArea.top + (printArea.height - objectHeight) / 2)
+  });
+  object.setCoords();
+};
+
 const fileToDataUrl = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -707,6 +775,7 @@ export const EditorCanvas = (): JSX.Element => {
   const renderNonceRef = useRef(0);
 
   const [garmentType, setGarmentType] = useState<GarmentType>("TSHIRT");
+  const [garmentSide, setGarmentSide] = useState<GarmentSide>("FRONT");
   const [garmentColor, setGarmentColor] = useState<string>(GARMENT_COLORS[0]);
   const [fontFamily, setFontFamily] = useState<string>(FONT_FAMILIES[0]);
   const [textColor, setTextColor] = useState<string>(TEXT_COLORS[0]);
@@ -860,7 +929,7 @@ export const EditorCanvas = (): JSX.Element => {
         .filter((object) => isSystemLayer(object))
         .forEach((object) => canvas.remove(object));
 
-      const rasterTemplate = await buildRasterTemplate(garmentType, garmentColor);
+      const rasterTemplate = await buildRasterTemplate(garmentType, garmentSide, garmentColor);
 
       if (nonce !== renderNonceRef.current) {
         return;
@@ -911,7 +980,7 @@ export const EditorCanvas = (): JSX.Element => {
 
       canvas.requestRenderAll();
     },
-    [garmentColor, garmentType, showGrid]
+    [garmentColor, garmentSide, garmentType, showGrid]
   );
 
   useEffect(() => {
@@ -966,7 +1035,7 @@ export const EditorCanvas = (): JSX.Element => {
     }
     void repaintTemplate(canvas);
     refreshLayers();
-  }, [garmentType, garmentColor, repaintTemplate, refreshLayers]);
+  }, [garmentType, garmentSide, garmentColor, repaintTemplate, refreshLayers]);
 
   const changeSelectedProduct = (productId: string): void => {
     const product = productsForGarment.find((item) => item.id === productId);
@@ -990,6 +1059,7 @@ export const EditorCanvas = (): JSX.Element => {
       editable: true
     });
 
+    centerObjectInPrintArea(text, activePrintArea);
     canvas.add(text);
     canvas.setActiveObject(text);
     constrainInsidePrintArea(text, activePrintArea, snapToGridEnabled);
@@ -1063,6 +1133,7 @@ export const EditorCanvas = (): JSX.Element => {
       objectCaching: true
     });
 
+    centerObjectInPrintArea(image, activePrintArea);
     canvas.add(image);
     canvas.setActiveObject(image);
     constrainInsidePrintArea(image, activePrintArea, snapToGridEnabled);
@@ -1317,7 +1388,27 @@ export const EditorCanvas = (): JSX.Element => {
                     className={`group rounded-xl border px-3 py-3 text-left transition ${active ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:border-primary/50"}`}
                   >
                     <p className="text-sm font-semibold">{option.label}</p>
-                    <p className={`text-[10px] uppercase tracking-[0.16em] ${active ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{option.technicalLabel}</p>
+                    <p className={`text-[10px] uppercase tracking-[0.16em] ${active ? "text-primary-foreground/70" : "text-muted-foreground"}`}>
+                      {GARMENT_SIDE_LABELS[garmentSide]}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex flex-wrap gap-2 pt-1">
+              {GARMENT_SIDE_OPTIONS.map((side) => {
+                const active = garmentSide === side;
+
+                return (
+                  <button
+                    key={side}
+                    type="button"
+                    onClick={() => setGarmentSide(side)}
+                    className={`rounded-md border px-3 py-2 text-sm transition ${
+                      active ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:border-primary/50"
+                    }`}
+                  >
+                    {GARMENT_SIDE_LABELS[side]}
                   </button>
                 );
               })}
