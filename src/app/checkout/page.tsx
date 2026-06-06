@@ -37,6 +37,16 @@ const demoAddress: ShippingFormState = {
   postalCode: "125009"
 };
 
+const emptyAddress: ShippingFormState = {
+  firstName: "",
+  lastName: "",
+  line1: "",
+  line2: "",
+  city: "",
+  state: "",
+  postalCode: ""
+};
+
 const getCheckoutItemImage = (item: CartItem): string | null => item.customizationPreviewUrl ?? item.imageUrl ?? null;
 
 const getItemDescriptor = (item: CartItem): string => {
@@ -50,15 +60,7 @@ const getItemDescriptor = (item: CartItem): string => {
 
 export default function CheckoutPage(): JSX.Element {
   const { data: cart, isLoading, isError } = useCart();
-  const [form, setForm] = useState<ShippingFormState>({
-    firstName: "",
-    lastName: "",
-    line1: "",
-    line2: "",
-    city: "",
-    state: "",
-    postalCode: ""
-  });
+  const [form, setForm] = useState<ShippingFormState>(emptyAddress);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>("");
 
@@ -118,7 +120,7 @@ export default function CheckoutPage(): JSX.Element {
       const payload = (await response.json()) as CheckoutSessionResponse;
 
       if (!response.ok || !payload.success || !payload.data?.checkoutUrl) {
-        throw new Error(payload.error?.message ?? "Не удалось создать сессию оплаты");
+        throw new Error(payload.error?.message ?? "Не удалось создать заказ. Попробуйте ещё раз.");
       }
 
       window.location.href = payload.data.checkoutUrl;
@@ -157,7 +159,7 @@ export default function CheckoutPage(): JSX.Element {
         <p className="text-xs uppercase tracking-[0.22em] text-muted-foreground">RSH checkout</p>
         <h1 className="mt-2 text-3xl font-semibold">Корзина пустая</h1>
         <p className="mx-auto mt-3 max-w-2xl text-sm text-muted-foreground">
-          Добавьте брендовую вещь из каталога или соберите кастомную базовую вещь в 2D Lab, после этого здесь появится оформление.
+          Добавьте брендовую вещь из каталога или соберите кастомную базовую вещь в 2D Lab, после этого здесь появится оформление заказа.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <Link href="/catalog" className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground">
@@ -179,7 +181,7 @@ export default function CheckoutPage(): JSX.Element {
           <div>
             <h1 className="text-4xl font-semibold">Оформление заказа</h1>
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Проверяем адрес, фиксируем состав корзины и создаём заказ. В демо-режиме оплата завершится локально без реального списания.
+              Проверяем адрес, фиксируем состав корзины и создаём заказ. В демо-режиме оплата завершается локально без реального списания.
             </p>
           </div>
           <div className="grid grid-cols-3 overflow-hidden rounded-full border text-xs uppercase tracking-[0.14em] text-muted-foreground">
@@ -195,13 +197,9 @@ export default function CheckoutPage(): JSX.Element {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <h2 className="text-2xl font-semibold">Адрес доставки</h2>
-              <p className="mt-1 text-sm text-muted-foreground">Для показа можно быстро заполнить демо-адрес.</p>
+              <p className="mt-1 text-sm text-muted-foreground">Для показа можно быстро заполнить тестовый адрес.</p>
             </div>
-            <button
-              type="button"
-              className="rounded-md border px-4 py-2 text-sm hover:bg-muted"
-              onClick={() => setForm(demoAddress)}
-            >
+            <button type="button" className="rounded-md border px-4 py-2 text-sm hover:bg-muted" onClick={() => setForm(demoAddress)}>
               Заполнить демо-адрес
             </button>
           </div>
@@ -211,40 +209,88 @@ export default function CheckoutPage(): JSX.Element {
           ) : null}
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block space-y-1">
+            <label className="block space-y-1" htmlFor="checkout-first-name">
               <span className="text-sm">Имя</span>
-              <input className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={form.firstName} onChange={(event) => updateField("firstName", event.target.value)} required />
+              <input
+                id="checkout-first-name"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={form.firstName}
+                onChange={(event) => updateField("firstName", event.target.value)}
+                required
+                autoComplete="given-name"
+              />
             </label>
-            <label className="block space-y-1">
+            <label className="block space-y-1" htmlFor="checkout-last-name">
               <span className="text-sm">Фамилия</span>
-              <input className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={form.lastName} onChange={(event) => updateField("lastName", event.target.value)} required />
+              <input
+                id="checkout-last-name"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={form.lastName}
+                onChange={(event) => updateField("lastName", event.target.value)}
+                required
+                autoComplete="family-name"
+              />
             </label>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block space-y-1">
+            <label className="block space-y-1" htmlFor="checkout-state">
               <span className="text-sm">Регион</span>
-              <input className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={form.state} onChange={(event) => updateField("state", event.target.value)} required />
+              <input
+                id="checkout-state"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={form.state}
+                onChange={(event) => updateField("state", event.target.value)}
+                required
+                autoComplete="address-level1"
+              />
             </label>
-            <label className="block space-y-1">
+            <label className="block space-y-1" htmlFor="checkout-city">
               <span className="text-sm">Город</span>
-              <input className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={form.city} onChange={(event) => updateField("city", event.target.value)} required />
+              <input
+                id="checkout-city"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={form.city}
+                onChange={(event) => updateField("city", event.target.value)}
+                required
+                autoComplete="address-level2"
+              />
             </label>
           </div>
 
-          <label className="block space-y-1">
+          <label className="block space-y-1" htmlFor="checkout-line1">
             <span className="text-sm">Адрес</span>
-            <input className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={form.line1} onChange={(event) => updateField("line1", event.target.value)} required />
+            <input
+              id="checkout-line1"
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+              value={form.line1}
+              onChange={(event) => updateField("line1", event.target.value)}
+              required
+              autoComplete="address-line1"
+            />
           </label>
 
           <div className="grid gap-3 sm:grid-cols-[1fr_180px]">
-            <label className="block space-y-1">
-              <span className="text-sm">Адрес дополнительно</span>
-              <input className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={form.line2} onChange={(event) => updateField("line2", event.target.value)} />
+            <label className="block space-y-1" htmlFor="checkout-line2">
+              <span className="text-sm">Квартира / офис</span>
+              <input
+                id="checkout-line2"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={form.line2}
+                onChange={(event) => updateField("line2", event.target.value)}
+                autoComplete="address-line2"
+              />
             </label>
-            <label className="block space-y-1">
+            <label className="block space-y-1" htmlFor="checkout-postal-code">
               <span className="text-sm">Индекс</span>
-              <input className="w-full rounded-md border bg-background px-3 py-2 text-sm" value={form.postalCode} onChange={(event) => updateField("postalCode", event.target.value)} required />
+              <input
+                id="checkout-postal-code"
+                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                value={form.postalCode}
+                onChange={(event) => updateField("postalCode", event.target.value)}
+                required
+                autoComplete="postal-code"
+              />
             </label>
           </div>
 
@@ -253,7 +299,7 @@ export default function CheckoutPage(): JSX.Element {
           </button>
 
           <p className="text-xs text-muted-foreground">
-            После оплаты заказ подтверждается через Stripe webhook. Кастомные дизайны сохраняются вместе с исходным Fabric JSON и превью.
+            В production заказ подтверждается через Stripe webhook. В локальном демо при placeholder-ключе Stripe заказ сразу переходит в статус «Оплачен».
           </p>
         </form>
 

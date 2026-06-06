@@ -1,4 +1,4 @@
-﻿import { formatStoreMoney } from "@/lib/currency";
+import { formatStoreMoney } from "@/lib/currency";
 
 export const getOrderStatusLabel = (status: string): string => {
   switch (status) {
@@ -9,7 +9,7 @@ export const getOrderStatusLabel = (status: string): string => {
     case "FULFILLED":
       return "Выполнен";
     case "CANCELLED":
-      return "Отменен";
+      return "Отменён";
     case "REFUNDED":
       return "Возврат";
     default:
@@ -18,3 +18,4 @@ export const getOrderStatusLabel = (status: string): string => {
 };
 
 export const formatUsdCents = (value: number): string => formatStoreMoney(value, "USD");
+
