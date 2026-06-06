@@ -9,6 +9,7 @@ playwright-report
 .env.local
 .env.*.local
 *.log
-prisma/migrations
 tsconfig.tsbuildinfo
 tmp-debug-admin-products.ts
+.playwright-mcp
+outputs
