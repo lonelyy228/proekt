@@ -141,7 +141,7 @@ const TEMPLATE_ASSETS: Record<GarmentType, TemplateAsset> = {
     views: {
       FRONT: {
         crop: { x: 0, y: 0, width: 0.39, height: 1 },
-        printAreaRatio: { left: 0.24, top: 0.22, width: 0.52, height: 0.58 },
+        printAreaRatio: { left: 0.19, top: 0.18, width: 0.62, height: 0.66 },
         fillSeedRatios: [
           { x: 0.5, y: 0.52 },
           { x: 0.24, y: 0.34 },
@@ -157,8 +157,8 @@ const TEMPLATE_ASSETS: Record<GarmentType, TemplateAsset> = {
         }
       },
       BACK: {
-        crop: { x: 0.52, y: 0, width: 0.39, height: 1 },
-        printAreaRatio: { left: 0.24, top: 0.22, width: 0.52, height: 0.6 },
+        crop: { x: 0.5, y: 0, width: 0.42, height: 1 },
+        printAreaRatio: { left: 0.19, top: 0.18, width: 0.62, height: 0.68 },
         fillSeedRatios: [
           { x: 0.5, y: 0.52 },
           { x: 0.24, y: 0.34 },
@@ -174,7 +174,7 @@ const TEMPLATE_ASSETS: Record<GarmentType, TemplateAsset> = {
     views: {
       FRONT: {
         crop: { x: 0, y: 0, width: 0.4, height: 1 },
-        printAreaRatio: { left: 0.24, top: 0.24, width: 0.52, height: 0.54 },
+        printAreaRatio: { left: 0.2, top: 0.2, width: 0.6, height: 0.6 },
         fillSeedRatios: [
           { x: 0.5, y: 0.54 },
           { x: 0.2, y: 0.6 },
@@ -191,8 +191,8 @@ const TEMPLATE_ASSETS: Record<GarmentType, TemplateAsset> = {
         }
       },
       BACK: {
-        crop: { x: 0.52, y: 0, width: 0.4, height: 1 },
-        printAreaRatio: { left: 0.24, top: 0.24, width: 0.52, height: 0.54 },
+        crop: { x: 0.5, y: 0, width: 0.44, height: 1 },
+        printAreaRatio: { left: 0.2, top: 0.2, width: 0.6, height: 0.6 },
         fillSeedRatios: [
           { x: 0.5, y: 0.54 },
           { x: 0.18, y: 0.58 },
@@ -209,7 +209,7 @@ const TEMPLATE_ASSETS: Record<GarmentType, TemplateAsset> = {
     views: {
       FRONT: {
         crop: { x: 0, y: 0, width: 0.52, height: 1 },
-        printAreaRatio: { left: 0.18, top: 0.22, width: 0.64, height: 0.54 },
+        printAreaRatio: { left: 0.15, top: 0.18, width: 0.7, height: 0.6 },
         fillSeedRatios: [
           { x: 0.35, y: 0.5 },
           { x: 0.65, y: 0.5 }
@@ -225,7 +225,7 @@ const TEMPLATE_ASSETS: Record<GarmentType, TemplateAsset> = {
       },
       BACK: {
         crop: { x: 0.5, y: 0, width: 0.46, height: 1 },
-        printAreaRatio: { left: 0.18, top: 0.22, width: 0.64, height: 0.54 },
+        printAreaRatio: { left: 0.15, top: 0.18, width: 0.7, height: 0.6 },
         fillSeedRatios: [
           { x: 0.35, y: 0.5 },
           { x: 0.65, y: 0.5 }
@@ -497,59 +497,75 @@ const buildRasterTemplate = async (
   const fullHeight = renderHeight;
   const trimmedData = context.getImageData(0, 0, fullWidth, fullHeight);
   const pixels = trimmedData.data;
-
   const lineThreshold = TEMPLATE_LINE_THRESHOLD;
-  const mask = new Uint8Array(fullWidth * fullHeight);
-  const colorTolerance = 32;
-  const maxReachPixels = fullWidth * fullHeight * 0.72;
-  let reachedPixels = 0;
+  const background = new Uint8Array(fullWidth * fullHeight);
+  const queue: number[] = [];
 
-  for (const seed of view.fillSeedRatios) {
-    const seedX = clamp(Math.round(fullWidth * seed.x), 0, fullWidth - 1);
-    const seedY = clamp(Math.round(fullHeight * seed.y), 0, fullHeight - 1);
-    const seedIndex = (seedY * fullWidth + seedX) * 4;
-    const seedR = pixels[seedIndex];
-    const seedG = pixels[seedIndex + 1];
-    const seedB = pixels[seedIndex + 2];
+  const pushBackgroundSeed = (x: number, y: number): void => {
+    const pixelPosition = y * fullWidth + x;
+    if (background[pixelPosition] === 1) {
+      return;
+    }
 
-    const visited = new Uint8Array(fullWidth * fullHeight);
-    const stack: number[] = [seedY * fullWidth + seedX];
+    const pixelIndex = pixelPosition * 4;
+    const red = pixels[pixelIndex];
+    const green = pixels[pixelIndex + 1];
+    const blue = pixels[pixelIndex + 2];
 
-    while (stack.length > 0 && reachedPixels < maxReachPixels) {
-      const current = stack.pop();
-      if (current === undefined || visited[current] === 1) {
+    if (!isNearWhiteBackground(red, green, blue)) {
+      return;
+    }
+
+    background[pixelPosition] = 1;
+    queue.push(pixelPosition);
+  };
+
+  for (let x = 0; x < fullWidth; x += 1) {
+    pushBackgroundSeed(x, 0);
+    pushBackgroundSeed(x, fullHeight - 1);
+  }
+
+  for (let y = 0; y < fullHeight; y += 1) {
+    pushBackgroundSeed(0, y);
+    pushBackgroundSeed(fullWidth - 1, y);
+  }
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current === undefined) {
+      continue;
+    }
+
+    const currentX = current % fullWidth;
+    const currentY = Math.floor(current / fullWidth);
+    const neighbors = [
+      [currentX - 1, currentY],
+      [currentX + 1, currentY],
+      [currentX, currentY - 1],
+      [currentX, currentY + 1]
+    ];
+
+    for (const [nextX, nextY] of neighbors) {
+      if (nextX < 0 || nextX >= fullWidth || nextY < 0 || nextY >= fullHeight) {
         continue;
       }
 
-      visited[current] = 1;
-      const currentX = current % fullWidth;
-      const currentY = Math.floor(current / fullWidth);
-      const currentPixel = current * 4;
-
-      const red = pixels[currentPixel];
-      const green = pixels[currentPixel + 1];
-      const blue = pixels[currentPixel + 2];
-      const alpha = pixels[currentPixel + 3];
-      const luminance = (red + green + blue) / 3;
-
-      if (alpha === 0 || luminance <= lineThreshold) {
+      const nextPosition = nextY * fullWidth + nextX;
+      if (background[nextPosition] === 1) {
         continue;
       }
 
-      const distance = Math.sqrt((red - seedR) ** 2 + (green - seedG) ** 2 + (blue - seedB) ** 2);
-      if (distance > colorTolerance) {
+      const nextIndex = nextPosition * 4;
+      const red = pixels[nextIndex];
+      const green = pixels[nextIndex + 1];
+      const blue = pixels[nextIndex + 2];
+
+      if (!isNearWhiteBackground(red, green, blue)) {
         continue;
       }
 
-      if (mask[current] === 0) {
-        mask[current] = 1;
-        reachedPixels += 1;
-      }
-
-      if (currentX > 0) stack.push(current - 1);
-      if (currentX < fullWidth - 1) stack.push(current + 1);
-      if (currentY > 0) stack.push(current - fullWidth);
-      if (currentY < fullHeight - 1) stack.push(current + fullWidth);
+      background[nextPosition] = 1;
+      queue.push(nextPosition);
     }
   }
 
@@ -573,7 +589,7 @@ const buildRasterTemplate = async (
     }
 
     const pixelPosition = index / 4;
-    if (mask[pixelPosition] === 0) {
+    if (background[pixelPosition] === 1) {
       pixels[index + 3] = 0;
       continue;
     }
@@ -590,6 +606,11 @@ const buildRasterTemplate = async (
   const trimmedHeight = fullHeight;
 
   context.putImageData(trimmedData, 0, 0);
+  context.save();
+  context.globalCompositeOperation = "source-atop";
+  context.globalAlpha = garmentSide === "BACK" ? 0.52 : 0.34;
+  context.drawImage(source, cropX, cropY, cropWidth, cropHeight, 0, 0, renderWidth, renderHeight);
+  context.restore();
 
   const preparedCanvas = document.createElement("canvas");
   preparedCanvas.width = trimmedWidth;
@@ -750,6 +771,14 @@ const createPrintGridDataUrl = (printArea: PrintArea): string => {
   context.strokeRect(0.5, 0.5, printArea.width - 1, printArea.height - 1);
 
   return gridCanvas.toDataURL("image/png");
+};
+
+const isNearWhiteBackground = (red: number, green: number, blue: number): boolean => {
+  const minChannel = Math.min(red, green, blue);
+  const maxChannel = Math.max(red, green, blue);
+  const luminance = (red + green + blue) / 3;
+
+  return luminance >= 244 && maxChannel - minChannel <= 18;
 };
 
 const createExportPayload = (canvas: Canvas): { canvasJson: unknown; previewUrl: string } => {
@@ -1052,7 +1081,7 @@ export const EditorCanvas = (): JSX.Element => {
     const text = new Textbox(textValue.trim() || "RSH custom", {
       left: activePrintArea.left + 18,
       top: activePrintArea.top + 18,
-      width: activePrintArea.width - 36,
+      width: Math.min(260, Math.round(activePrintArea.width * 0.62)),
       fontSize: textSize,
       fill: textColor,
       fontFamily,
