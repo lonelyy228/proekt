@@ -198,6 +198,83 @@ const parseHexColor = (hex: string): [number, number, number] => {
   return [parseInt(normalized.slice(0, 2), 16), parseInt(normalized.slice(2, 4), 16), parseInt(normalized.slice(4, 6), 16)];
 };
 
+const imageHasVisibleAlpha = (image: HTMLImageElement): boolean => {
+  const sampleCanvas = document.createElement("canvas");
+  sampleCanvas.width = image.width;
+  sampleCanvas.height = image.height;
+  const sampleContext = sampleCanvas.getContext("2d");
+
+  if (!sampleContext) {
+    return false;
+  }
+
+  sampleContext.clearRect(0, 0, sampleCanvas.width, sampleCanvas.height);
+  sampleContext.drawImage(image, 0, 0, sampleCanvas.width, sampleCanvas.height);
+
+  const pixels = sampleContext.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height).data;
+  for (let index = 3; index < pixels.length; index += 32) {
+    if (pixels[index] > 24) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const applySyntheticGarmentDepth = (context: CanvasRenderingContext2D, width: number, height: number, garmentType: GarmentType): void => {
+  context.save();
+  context.globalCompositeOperation = "source-atop";
+
+  const highlight = context.createRadialGradient(width * 0.5, height * 0.16, width * 0.08, width * 0.5, height * 0.22, width * 0.72);
+  highlight.addColorStop(0, "rgba(255,255,255,0.18)");
+  highlight.addColorStop(0.36, "rgba(255,255,255,0.08)");
+  highlight.addColorStop(1, "rgba(255,255,255,0)");
+  context.fillStyle = highlight;
+  context.fillRect(0, 0, width, height);
+
+  const topSoftness = context.createLinearGradient(0, 0, 0, height * 0.42);
+  topSoftness.addColorStop(0, "rgba(255,255,255,0.05)");
+  topSoftness.addColorStop(1, "rgba(255,255,255,0)");
+  context.fillStyle = topSoftness;
+  context.fillRect(0, 0, width, Math.round(height * 0.42));
+
+  context.globalCompositeOperation = "multiply";
+
+  const sideFalloff = context.createLinearGradient(0, 0, width, 0);
+  sideFalloff.addColorStop(0, "rgba(0,0,0,0.12)");
+  sideFalloff.addColorStop(0.18, "rgba(0,0,0,0.05)");
+  sideFalloff.addColorStop(0.5, "rgba(0,0,0,0)");
+  sideFalloff.addColorStop(0.82, "rgba(0,0,0,0.05)");
+  sideFalloff.addColorStop(1, "rgba(0,0,0,0.12)");
+  context.fillStyle = sideFalloff;
+  context.fillRect(0, 0, width, height);
+
+  const hemShadow = context.createLinearGradient(0, height * 0.58, 0, height);
+  hemShadow.addColorStop(0, "rgba(0,0,0,0)");
+  hemShadow.addColorStop(1, "rgba(0,0,0,0.09)");
+  context.fillStyle = hemShadow;
+  context.fillRect(0, Math.round(height * 0.58), width, Math.round(height * 0.42));
+
+  if (garmentType === "HOODIE") {
+    const torsoShadow = context.createRadialGradient(width * 0.5, height * 0.52, width * 0.12, width * 0.5, height * 0.56, width * 0.48);
+    torsoShadow.addColorStop(0, "rgba(0,0,0,0)");
+    torsoShadow.addColorStop(1, "rgba(0,0,0,0.08)");
+    context.fillStyle = torsoShadow;
+    context.fillRect(0, 0, width, height);
+  }
+
+  if (garmentType === "SHORTS") {
+    const centerCrease = context.createLinearGradient(width * 0.5, height * 0.18, width * 0.5, height);
+    centerCrease.addColorStop(0, "rgba(0,0,0,0)");
+    centerCrease.addColorStop(0.6, "rgba(0,0,0,0.03)");
+    centerCrease.addColorStop(1, "rgba(0,0,0,0.08)");
+    context.fillStyle = centerCrease;
+    context.fillRect(Math.round(width * 0.44), 0, Math.round(width * 0.12), height);
+  }
+
+  context.restore();
+};
+
 const loadHtmlImage = async (src: string): Promise<HTMLImageElement> => {
   const cached = imageCache.get(src);
   if (cached) {
@@ -238,9 +315,21 @@ const buildRasterTemplate = async (garmentType: GarmentType, garmentColor: strin
     }
 
     sourceContext.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
-    sourceContext.drawImage(maskImage, 0, 0, sourceCanvas.width, sourceCanvas.height);
+    sourceContext.drawImage(baseImage, 0, 0, sourceCanvas.width, sourceCanvas.height);
 
-    const tintData = sourceContext.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
+    const maskCanvas = document.createElement("canvas");
+    maskCanvas.width = sourceCanvas.width;
+    maskCanvas.height = sourceCanvas.height;
+    const maskContext = maskCanvas.getContext("2d");
+
+    if (!maskContext) {
+      throw new Error("No 2d context for layered mask render");
+    }
+
+    maskContext.clearRect(0, 0, maskCanvas.width, maskCanvas.height);
+    maskContext.drawImage(maskImage, 0, 0, maskCanvas.width, maskCanvas.height);
+
+    const tintData = maskContext.getImageData(0, 0, sourceCanvas.width, sourceCanvas.height);
     const tintPixels = tintData.data;
     let minX = sourceCanvas.width;
     let minY = sourceCanvas.height;
@@ -249,9 +338,7 @@ const buildRasterTemplate = async (garmentType: GarmentType, garmentColor: strin
 
     for (let index = 0; index < tintPixels.length; index += 4) {
       const alpha = tintPixels[index + 3];
-      const maskLuminance = (tintPixels[index] + tintPixels[index + 1] + tintPixels[index + 2]) / 3;
-
-      if (alpha < 32 || maskLuminance < 192) {
+      if (alpha < 16) {
         tintPixels[index + 3] = 0;
         continue;
       }
@@ -267,8 +354,9 @@ const buildRasterTemplate = async (garmentType: GarmentType, garmentColor: strin
       tintPixels[index] = colorR;
       tintPixels[index + 1] = colorG;
       tintPixels[index + 2] = colorB;
-      tintPixels[index + 3] = 255;
+      tintPixels[index + 3] = alpha;
     }
+    sourceContext.clearRect(0, 0, sourceCanvas.width, sourceCanvas.height);
     sourceContext.putImageData(tintData, 0, 0);
 
     if (maxX <= minX || maxY <= minY) {
@@ -278,9 +366,14 @@ const buildRasterTemplate = async (garmentType: GarmentType, garmentColor: strin
       maxY = sourceCanvas.height - 1;
     }
 
-    sourceContext.globalCompositeOperation = "multiply";
-    sourceContext.drawImage(shadowImage, 0, 0, sourceCanvas.width, sourceCanvas.height);
-    sourceContext.globalCompositeOperation = "source-over";
+    applySyntheticGarmentDepth(sourceContext, sourceCanvas.width, sourceCanvas.height, garmentType);
+
+    if (imageHasVisibleAlpha(shadowImage)) {
+      sourceContext.globalCompositeOperation = "multiply";
+      sourceContext.drawImage(shadowImage, 0, 0, sourceCanvas.width, sourceCanvas.height);
+      sourceContext.globalCompositeOperation = "source-over";
+    }
+
     sourceContext.drawImage(linesImage, 0, 0, sourceCanvas.width, sourceCanvas.height);
 
     const padding = 140;
@@ -567,7 +660,7 @@ const createPrintGridDataUrl = (printArea: PrintArea): string => {
   }
 
   context.clearRect(0, 0, printArea.width, printArea.height);
-  context.strokeStyle = "rgba(17, 17, 17, 0.08)";
+  context.strokeStyle = "rgba(17, 17, 17, 0.045)";
   context.lineWidth = 1;
 
   for (let x = GRID_STEP; x < printArea.width; x += GRID_STEP) {
@@ -585,7 +678,7 @@ const createPrintGridDataUrl = (printArea: PrintArea): string => {
   }
 
   context.setLineDash([8, 6]);
-  context.strokeStyle = "rgba(17, 17, 17, 0.28)";
+  context.strokeStyle = "rgba(17, 17, 17, 0.16)";
   context.strokeRect(0.5, 0.5, printArea.width - 1, printArea.height - 1);
 
   return gridCanvas.toDataURL("image/png");
@@ -618,6 +711,7 @@ export const EditorCanvas = (): JSX.Element => {
   const [fontFamily, setFontFamily] = useState<string>(FONT_FAMILIES[0]);
   const [textColor, setTextColor] = useState<string>(TEXT_COLORS[0]);
   const [textValue, setTextValue] = useState<string>("RSH custom");
+  const [textSize, setTextSize] = useState<number>(34);
   const [showGrid, setShowGrid] = useState<boolean>(false);
   const [snapToGridEnabled, setSnapToGridEnabled] = useState<boolean>(true);
   const [imageUrlInput, setImageUrlInput] = useState<string>("");
@@ -732,6 +826,31 @@ export const EditorCanvas = (): JSX.Element => {
     );
   }, [getEditableObjects]);
 
+  const getSelectedTextbox = useCallback((): Textbox | null => {
+    const canvas = fabricRef.current;
+    const selected = canvas?.getActiveObject();
+
+    if (!selected || isSystemLayer(selected) || !(selected instanceof Textbox)) {
+      return null;
+    }
+
+    return selected;
+  }, []);
+
+  const syncTextControlsFromSelection = useCallback((): void => {
+    const selectedTextbox = getSelectedTextbox();
+    if (!selectedTextbox) {
+      return;
+    }
+
+    setTextValue(selectedTextbox.text ?? "");
+    setFontFamily(selectedTextbox.fontFamily ?? FONT_FAMILIES[0]);
+    setTextSize(Math.round(selectedTextbox.fontSize ?? 34));
+    if (typeof selectedTextbox.fill === "string") {
+      setTextColor(selectedTextbox.fill);
+    }
+  }, [getSelectedTextbox]);
+
   const repaintTemplate = useCallback(
     async (canvas: Canvas): Promise<void> => {
       const nonce = ++renderNonceRef.current;
@@ -828,6 +947,9 @@ export const EditorCanvas = (): JSX.Element => {
     canvas.on("object:added", refreshLayers);
     canvas.on("object:removed", refreshLayers);
     canvas.on("object:modified", refreshLayers);
+    canvas.on("selection:created", syncTextControlsFromSelection);
+    canvas.on("selection:updated", syncTextControlsFromSelection);
+    canvas.on("selection:cleared", syncTextControlsFromSelection);
 
     fabricRef.current = canvas;
 
@@ -835,7 +957,7 @@ export const EditorCanvas = (): JSX.Element => {
       canvas.dispose();
       fabricRef.current = null;
     };
-  }, [refreshLayers]);
+  }, [refreshLayers, syncTextControlsFromSelection]);
 
   useEffect(() => {
     const canvas = fabricRef.current;
@@ -862,7 +984,7 @@ export const EditorCanvas = (): JSX.Element => {
       left: activePrintArea.left + 18,
       top: activePrintArea.top + 18,
       width: activePrintArea.width - 36,
-      fontSize: 34,
+      fontSize: textSize,
       fill: textColor,
       fontFamily,
       editable: true
@@ -874,6 +996,50 @@ export const EditorCanvas = (): JSX.Element => {
     canvas.requestRenderAll();
     refreshLayers();
     setEditorStatus("Текст добавлен.");
+  };
+
+  const updateSelectedTextbox = (updater: (textbox: Textbox) => void): void => {
+    const canvas = fabricRef.current;
+    const selectedTextbox = getSelectedTextbox();
+
+    if (!canvas || !selectedTextbox) {
+      return;
+    }
+
+    updater(selectedTextbox);
+    constrainInsidePrintArea(selectedTextbox, activePrintArea, false);
+    selectedTextbox.setCoords();
+    canvas.requestRenderAll();
+    refreshLayers();
+  };
+
+  const handleTextValueChange = (value: string): void => {
+    setTextValue(value);
+    updateSelectedTextbox((textbox) => {
+      textbox.set("text", value || " ");
+    });
+  };
+
+  const handleFontFamilyChange = (value: string): void => {
+    setFontFamily(value);
+    updateSelectedTextbox((textbox) => {
+      textbox.set("fontFamily", value);
+    });
+  };
+
+  const handleTextColorChange = (value: string): void => {
+    setTextColor(value);
+    updateSelectedTextbox((textbox) => {
+      textbox.set("fill", value);
+    });
+  };
+
+  const applyTextSize = (nextSize: number): void => {
+    const normalized = clamp(Math.round(nextSize), 14, 160);
+    setTextSize(normalized);
+    updateSelectedTextbox((textbox) => {
+      textbox.set("fontSize", normalized);
+    });
   };
 
   const placeImage = (image: FabricImage): void => {
@@ -1276,38 +1442,64 @@ export const EditorCanvas = (): JSX.Element => {
               <input
                 id="editor-text-value"
                 value={textValue}
-                onChange={(event) => setTextValue(event.target.value)}
+                onChange={(event) => handleTextValueChange(event.target.value)}
                 className="w-full rounded-md border bg-background px-3 py-2 text-sm"
                 placeholder="Например: RSH ARCHIVE"
               />
             </div>
 
-            <div className="space-y-1">
-              <label htmlFor="editor-font" className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                Шрифт
-              </label>
-              <select
-                id="editor-font"
-                value={fontFamily}
-                onChange={(event) => setFontFamily(event.target.value)}
-                className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-              >
-                {FONT_FAMILIES.map((font) => (
-                  <option key={font} value={font}>
-                    {font}
-                  </option>
-                ))}
-              </select>
+            <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_150px]">
+              <div className="space-y-1">
+                <label htmlFor="editor-font" className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                  Шрифт
+                </label>
+                <select
+                  id="editor-font"
+                  value={fontFamily}
+                  onChange={(event) => handleFontFamilyChange(event.target.value)}
+                  className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                >
+                  {FONT_FAMILIES.map((font) => (
+                    <option key={font} value={font}>
+                      {font}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label htmlFor="editor-font-size" className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                  Размер
+                </label>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => applyTextSize(textSize - 2)} className="rounded-md border px-3 py-2 text-sm">
+                    A-
+                  </button>
+                  <input
+                    id="editor-font-size"
+                    type="number"
+                    min={14}
+                    max={160}
+                    step={1}
+                    value={textSize}
+                    onChange={(event) => applyTextSize(Number(event.target.value) || 14)}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                  />
+                  <button type="button" onClick={() => applyTextSize(textSize + 2)} className="rounded-md border px-3 py-2 text-sm">
+                    A+
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-1">
-              <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Цвет</p>
+              <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">Цвет текста</p>
               <div className="flex flex-wrap gap-1.5">
                 {TEXT_COLORS.map((color) => (
                   <button
                     key={color}
                     type="button"
-                    onClick={() => setTextColor(color)}
+                    onClick={() => handleTextColorChange(color)}
                     className={`h-8 w-8 rounded-full border ${textColor === color ? "ring-2 ring-primary" : ""}`}
                     style={{ backgroundColor: color }}
                     aria-label={`Цвет текста ${color}`}
