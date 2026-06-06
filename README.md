@@ -38,8 +38,11 @@ Production-grade Next.js 14 modular monolith for apparel eCommerce with secure a
 ## Release
 
 - Production rollout checklist: `docs/release-checklist.md`
+- Vercel deployment guide: `docs/vercel-deployment.md`
 - DB migration/rollback runbook: `docs/db-migration-runbook.md`
 - One-command pre-release verification: `npm run release:verify`
+- Production env preflight:
+  - `npm run deploy:env-check -- .env.production.example`
 - Configure required branch checks (`preview-smoke`, `release-gate`) for `develop/master`:
   - PowerShell:
     - `$env:GITHUB_TOKEN="<repo_admin_token>"`

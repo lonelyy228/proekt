@@ -2,6 +2,7 @@
 
 ## 1. Environment and Secrets
 
+- Follow `docs/vercel-deployment.md` for first-time Vercel setup.
 - Verify `DATABASE_URL`, `DIRECT_URL`, `REDIS_URL`, `APP_URL`, `COOKIE_DOMAIN`.
 - Verify auth secrets and rotation values:
   - `JWT_ACCESS_SECRET`
@@ -14,12 +15,15 @@
   - `UPLOADTHING_TOKEN`
   - `UPLOADTHING_APP_ID`
 - Confirm `NODE_ENV=production` in runtime.
+- Run production env preflight before deploy:
+  - `npm run deploy:env-check -- .env.production.example`
 
 ## 2. Database and Migrations
 
 - Run `npm run prisma:generate`.
 - Run `npm run prisma:deploy`.
 - Run `npm run db:preflight`.
+- Confirm `prisma/migrations` is committed to git.
 - Confirm schema consistency in production DB.
 - Confirm seed data policy (do not run destructive seed in production).
 
