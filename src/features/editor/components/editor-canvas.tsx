@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, FabricImage, FabricObject, Rect, Textbox } from "fabric";
+import { Canvas, FabricImage, FabricObject, Textbox } from "fabric";
 import Link from "next/link";
 import { ensureCsrfToken } from "@/lib/csrf-client";
 import { formatStoreMoney } from "@/lib/currency";
@@ -64,8 +64,11 @@ type GarmentTemplate = {
   printArea: PrintArea;
 };
 
+type SystemLayerKind = "garment" | "grid";
+
 type SystemLayerData = {
   systemLayer?: boolean;
+  systemLayerKind?: SystemLayerKind;
 };
 
 const CANVAS_DIMENSION = 760;
@@ -97,9 +100,9 @@ const GARMENT_TEMPLATES: Record<GarmentType, GarmentTemplate> = {
   }
 };
 const GARMENT_OPTIONS: GarmentType[] = ["TSHIRT", "HOODIE", "SHORTS"];
-const GARMENT_COLORS = ["#e9e9e9", "#111111", "#2b2b2b", "#5c564f", "#9b111e", "#1f3d72"];
+const GARMENT_COLORS = ["#f4f1ea", "#f7f7f2", "#111111", "#2b2b2b", "#5c564f", "#9b111e", "#1f3d72", "#7c8f7a"];
 const FONT_FAMILIES = ["Space Grotesk", "Arial", "Times New Roman", "Courier New", "Georgia"];
-const TEXT_COLORS = ["#111111", "#ffffff", "#d91b3a", "#214fce", "#0f8a5f", "#f29f05"];
+const TEXT_COLORS = ["#111111", "#ffffff", "#d91b3a", "#214fce", "#0f8a5f", "#f29f05", "#7a3cff"];
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
 type TemplateAsset = {
@@ -480,19 +483,21 @@ const buildRasterTemplate = async (garmentType: GarmentType, garmentColor: strin
 };
 
 
-const tagSystemLayer = <T extends FabricObject>(object: T): T => {
+const tagSystemLayer = <T extends FabricObject>(object: T, systemLayerKind: SystemLayerKind): T => {
   const extended = object as T & { data?: SystemLayerData };
-  extended.data = { ...(extended.data ?? {}), systemLayer: true };
+  extended.data = { ...(extended.data ?? {}), systemLayer: true, systemLayerKind };
   object.selectable = false;
   object.evented = false;
   object.excludeFromExport = true;
   return object;
 };
 
-const isSystemLayer = (object: FabricObject): boolean => {
+const getSystemLayerKind = (object: FabricObject): SystemLayerKind | null => {
   const layerData = (object as FabricObject & { data?: SystemLayerData }).data;
-  return layerData?.systemLayer === true;
+  return layerData?.systemLayer === true ? layerData.systemLayerKind ?? "garment" : null;
 };
+
+const isSystemLayer = (object: FabricObject): boolean => getSystemLayerKind(object) !== null;
 
 const getObjectLabel = (object: FabricObject, index: number): string => {
   if (object.type === "textbox") {
@@ -551,6 +556,58 @@ const fileToDataUrl = (file: File): Promise<string> =>
     reader.readAsDataURL(file);
   });
 
+const createPrintGridDataUrl = (printArea: PrintArea): string => {
+  const gridCanvas = document.createElement("canvas");
+  gridCanvas.width = printArea.width;
+  gridCanvas.height = printArea.height;
+
+  const context = gridCanvas.getContext("2d");
+  if (!context) {
+    return gridCanvas.toDataURL("image/png");
+  }
+
+  context.clearRect(0, 0, printArea.width, printArea.height);
+  context.strokeStyle = "rgba(17, 17, 17, 0.08)";
+  context.lineWidth = 1;
+
+  for (let x = GRID_STEP; x < printArea.width; x += GRID_STEP) {
+    context.beginPath();
+    context.moveTo(x + 0.5, 0);
+    context.lineTo(x + 0.5, printArea.height);
+    context.stroke();
+  }
+
+  for (let y = GRID_STEP; y < printArea.height; y += GRID_STEP) {
+    context.beginPath();
+    context.moveTo(0, y + 0.5);
+    context.lineTo(printArea.width, y + 0.5);
+    context.stroke();
+  }
+
+  context.setLineDash([8, 6]);
+  context.strokeStyle = "rgba(17, 17, 17, 0.28)";
+  context.strokeRect(0.5, 0.5, printArea.width - 1, printArea.height - 1);
+
+  return gridCanvas.toDataURL("image/png");
+};
+
+const createExportPayload = (canvas: Canvas): { canvasJson: unknown; previewUrl: string } => {
+  const gridLayers = canvas.getObjects().filter((object) => getSystemLayerKind(object) === "grid");
+
+  gridLayers.forEach((object) => object.set({ visible: false }));
+  canvas.requestRenderAll();
+
+  try {
+    return {
+      canvasJson: canvas.toJSON(),
+      previewUrl: canvas.toDataURL({ format: "webp", quality: 0.9, multiplier: 1 })
+    };
+  } finally {
+    gridLayers.forEach((object) => object.set({ visible: true }));
+    canvas.requestRenderAll();
+  }
+};
+
 export const EditorCanvas = (): JSX.Element => {
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
   const fabricRef = useRef<Canvas | null>(null);
@@ -572,6 +629,7 @@ export const EditorCanvas = (): JSX.Element => {
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [selectedVariantId, setSelectedVariantId] = useState<string>("");
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const snapToGridEnabledRef = useRef<boolean>(snapToGridEnabled);
 
   const template = useMemo(() => GARMENT_TEMPLATES[garmentType], [garmentType]);
   const setEditorStatus = useCallback((message: string): void => {
@@ -599,6 +657,10 @@ export const EditorCanvas = (): JSX.Element => {
   useEffect(() => {
     printAreaRef.current = activePrintArea;
   }, [activePrintArea]);
+
+  useEffect(() => {
+    snapToGridEnabledRef.current = snapToGridEnabled;
+  }, [snapToGridEnabled]);
 
   useEffect(() => {
     let mounted = true;
@@ -699,16 +761,38 @@ export const EditorCanvas = (): JSX.Element => {
         objectCaching: true
       });
 
-      const garmentLayer = tagSystemLayer(garmentImage);
+      const garmentLayer = tagSystemLayer(garmentImage, "garment");
       canvas.add(garmentLayer);
       canvas.sendObjectToBack(garmentLayer);
+
+      if (showGrid) {
+        const gridImage = await FabricImage.fromURL(createPrintGridDataUrl(rasterTemplate.printArea));
+
+        if (nonce !== renderNonceRef.current) {
+          return;
+        }
+
+        gridImage.set({
+          left: rasterTemplate.printArea.left,
+          top: rasterTemplate.printArea.top,
+          originX: "left",
+          originY: "top",
+          objectCaching: false,
+          opacity: 1
+        });
+
+        const gridLayer = tagSystemLayer(gridImage, "grid");
+        canvas.add(gridLayer);
+        canvas.sendObjectToBack(gridLayer);
+        canvas.bringObjectForward(gridLayer);
+      }
 
       setActivePrintArea(rasterTemplate.printArea);
       printAreaRef.current = rasterTemplate.printArea;
 
       canvas.requestRenderAll();
     },
-    [garmentColor, garmentType]
+    [garmentColor, garmentType, showGrid]
   );
 
   useEffect(() => {
@@ -719,7 +803,7 @@ export const EditorCanvas = (): JSX.Element => {
     const canvas = new Canvas(canvasElementRef.current, {
       width: CANVAS_DIMENSION,
       height: CANVAS_DIMENSION,
-      backgroundColor: "#f7f7f7",
+      backgroundColor: "#f6f4ef",
       preserveObjectStacking: true
     });
 
@@ -729,7 +813,7 @@ export const EditorCanvas = (): JSX.Element => {
         return;
       }
 
-      constrainInsidePrintArea(target, printAreaRef.current, snapToGridEnabled);
+      constrainInsidePrintArea(target, printAreaRef.current, snapToGridEnabledRef.current);
     });
 
     canvas.on("object:scaling", (event) => {
@@ -746,13 +830,12 @@ export const EditorCanvas = (): JSX.Element => {
     canvas.on("object:modified", refreshLayers);
 
     fabricRef.current = canvas;
-    void repaintTemplate(canvas);
 
     return () => {
       canvas.dispose();
       fabricRef.current = null;
     };
-  }, [repaintTemplate, refreshLayers, snapToGridEnabled]);
+  }, [refreshLayers]);
 
   useEffect(() => {
     const canvas = fabricRef.current;
@@ -789,6 +872,7 @@ export const EditorCanvas = (): JSX.Element => {
     canvas.setActiveObject(text);
     constrainInsidePrintArea(text, activePrintArea, snapToGridEnabled);
     canvas.requestRenderAll();
+    refreshLayers();
     setEditorStatus("Текст добавлен.");
   };
 
@@ -817,6 +901,7 @@ export const EditorCanvas = (): JSX.Element => {
     canvas.setActiveObject(image);
     constrainInsidePrintArea(image, activePrintArea, snapToGridEnabled);
     canvas.requestRenderAll();
+    refreshLayers();
   };
 
   const uploadImage = async (event: ChangeEvent<HTMLInputElement>): Promise<void> => {
@@ -948,8 +1033,7 @@ export const EditorCanvas = (): JSX.Element => {
       throw new Error("canvas-not-ready");
     }
 
-    const canvasJson = canvas.toJSON();
-    const previewUrl = canvas.toDataURL({ format: "webp", quality: 0.9, multiplier: 1 });
+    const { canvasJson, previewUrl } = createExportPayload(canvas);
     const csrfToken = await ensureCsrfToken();
 
     const response = await fetch("/api/designs", {
@@ -1050,7 +1134,7 @@ export const EditorCanvas = (): JSX.Element => {
   };
   return (
     <div className="space-y-4">
-      <section className="rounded-xl border bg-card p-4">
+      <section className="rounded-2xl border bg-card p-4 shadow-sm">
         <div className="grid gap-4 lg:grid-cols-[1.25fr_1fr]">
           <div className="space-y-2">
             <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Выбери макет</p>
@@ -1064,14 +1148,15 @@ export const EditorCanvas = (): JSX.Element => {
                     key={item}
                     onClick={() => setGarmentType(item)}
                     type="button"
-                    className={`rounded-lg border px-3 py-2 text-left transition ${active ? "border-primary bg-primary/10" : "hover:border-primary/50"}`}
+                    className={`group rounded-xl border px-3 py-3 text-left transition ${active ? "border-primary bg-primary text-primary-foreground" : "bg-background hover:border-primary/50"}`}
                   >
                     <p className="text-sm font-semibold">{option.label}</p>
-                    <p className="text-[10px] uppercase tracking-[0.16em] text-muted-foreground">{option.technicalLabel}</p>
+                    <p className={`text-[10px] uppercase tracking-[0.16em] ${active ? "text-primary-foreground/70" : "text-muted-foreground"}`}>{option.technicalLabel}</p>
                   </button>
                 );
               })}
             </div>
+            <p className="text-xs text-muted-foreground">{template.hint}. Брендовые вещи из каталога не изменяются.</p>
           </div>
 
           <div className="space-y-2">
@@ -1092,7 +1177,7 @@ export const EditorCanvas = (): JSX.Element => {
             <div className="flex flex-wrap gap-4 pt-1">
               <label className="inline-flex items-center gap-2 text-sm">
                 <input type="checkbox" checked={showGrid} onChange={(event) => setShowGrid(event.target.checked)} />
-                Сетка
+                Показать сетку
               </label>
               <label className="inline-flex items-center gap-2 text-sm">
                 <input
@@ -1100,9 +1185,10 @@ export const EditorCanvas = (): JSX.Element => {
                   checked={snapToGridEnabled}
                   onChange={(event) => setSnapToGridEnabled(event.target.checked)}
                 />
-                Привязка
+                Привязка к сетке
               </label>
             </div>
+            <p className="text-xs text-muted-foreground">Сетка нужна только для выравнивания и не попадёт в сохранённый дизайн.</p>
           </div>
         </div>
 
@@ -1155,14 +1241,14 @@ export const EditorCanvas = (): JSX.Element => {
         </div>
       </section>
 
-      <section className="grid gap-4 rounded-xl border bg-card p-4 lg:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="space-y-3">
+      <section className="grid gap-4 rounded-2xl border bg-card p-3 shadow-sm lg:grid-cols-[280px_minmax(0,1fr)_280px] lg:p-4">
+        <div className="space-y-3 lg:order-1">
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={addText} className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground">
-              Текст
+              Добавить текст
             </button>
-            <label className="rounded-md border px-3 py-2 text-sm hover:border-primary hover:text-primary">
-              Фото
+            <label className="cursor-pointer rounded-md border px-3 py-2 text-center text-sm hover:border-primary hover:text-primary">
+              Загрузить фото
               <input type="file" className="hidden" accept="image/*" onChange={uploadImage} />
             </label>
             <button type="button" onClick={() => rotateSelected(-15)} className="rounded-md border px-3 py-2 text-sm">
@@ -1182,7 +1268,7 @@ export const EditorCanvas = (): JSX.Element => {
             </button>
           </div>
 
-          <div className="grid gap-2 rounded-lg border p-3 md:grid-cols-[1fr_0.9fr_0.75fr]">
+          <div className="grid gap-3 rounded-xl border bg-background/80 p-3">
             <div className="space-y-1">
               <label htmlFor="editor-text-value" className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                 Текст слоя
@@ -1231,9 +1317,9 @@ export const EditorCanvas = (): JSX.Element => {
             </div>
           </div>
 
-          <div className="grid gap-2 rounded-lg border p-3">
+          <div className="grid gap-2 rounded-xl border bg-background/80 p-3">
             <label htmlFor="editor-image-url" className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-              Фото по ссылке
+              Фото по ссылке (URL)
             </label>
             <div className="flex flex-wrap gap-2">
               <input
@@ -1244,16 +1330,18 @@ export const EditorCanvas = (): JSX.Element => {
                 placeholder="https://..."
               />
               <button type="button" onClick={addImageByUrl} className="rounded-md border px-3 py-2 text-sm">
-                Добавить
+                Добавить по ссылке
               </button>
             </div>
           </div>
+        </div>
 
-          <div className="overflow-auto rounded-xl border bg-[#f3f3f3] p-2">
+        <div className="space-y-3 lg:order-2">
+          <div className="overflow-auto rounded-2xl border bg-[#f3f1ec] p-2 shadow-inner">
             <canvas ref={canvasElementRef} className="mx-auto block" />
           </div>
 
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-background/80 p-3">
             <button
               type="button"
               onClick={saveDesign}
@@ -1283,7 +1371,7 @@ export const EditorCanvas = (): JSX.Element => {
           </div>
         </div>
 
-        <aside className="rounded-lg border p-3">
+        <aside className="rounded-xl border bg-background/80 p-3 lg:order-3">
           <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Слои</p>
           <div className="mt-2 flex gap-2">
             <button type="button" onClick={() => moveLayer("UP")} className="rounded-md border px-3 py-2 text-sm">
@@ -1295,7 +1383,11 @@ export const EditorCanvas = (): JSX.Element => {
           </div>
 
           <div className="mt-3 max-h-[520px] space-y-2 overflow-auto pr-1">
-            {layers.length === 0 ? <p className="text-sm text-muted-foreground">Пока нет слоёв.</p> : null}
+            {layers.length === 0 ? (
+              <div className="rounded-xl border border-dashed p-4 text-sm text-muted-foreground">
+                Добавь текст или фото, и слои появятся здесь. Макет вещи и сетка не считаются редактируемыми слоями.
+              </div>
+            ) : null}
             {layers.map((layer) => (
               <button
                 key={`${layer.layerPosition}-${layer.label}`}
