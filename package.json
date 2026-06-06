@@ -26,7 +26,8 @@
     "prisma:ci:bootstrap": "npm run prisma:generate && npm run prisma:deploy && npm run prisma:db-push && npm run seed",
     "prisma:studio": "prisma studio",
     "db:preflight": "node scripts/db-preflight.mjs",
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx prisma/seed.ts",
+    "deploy:env-check": "node scripts/deploy-env-check.mjs"
   },
   "dependencies": {
     "@otplib/preset-default": "^12.0.1",
