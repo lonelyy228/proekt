@@ -38,6 +38,7 @@ Production-grade Next.js 14 modular monolith for apparel eCommerce with secure a
 ## Release
 
 - Production rollout checklist: `docs/release-checklist.md`
+- Finalization roadmap to 100% readiness: `docs/production-finalization-roadmap.md`
 - Vercel deployment guide: `docs/vercel-deployment.md`
 - DB migration/rollback runbook: `docs/db-migration-runbook.md`
 - One-command pre-release verification: `npm run release:verify`

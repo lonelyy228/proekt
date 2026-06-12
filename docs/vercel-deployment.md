@@ -1,45 +1,47 @@
-# Deploy RSH на Vercel
+# Deploy RSH on Vercel
 
-Этот гайд нужен для первого production/preview-деплоя RSH. Локально сайт может работать на Docker, но на хостинге нужны managed-сервисы: Postgres, Redis, UploadThing и Stripe.
+Этот гайд нужен для первого `preview` и `production` деплоя проекта RSH. Локально сайт может работать через Docker, но для публичного запуска нужны managed-сервисы: PostgreSQL, Redis, UploadThing и Stripe.
 
 ## 1. Что подготовить
 
-- GitHub repository: `lonelyy228/proekt`.
-- Vercel аккаунт, подключенный к GitHub.
-- Neon PostgreSQL или Vercel Postgres.
-- Redis provider: Upstash Redis подходит проще всего.
-- UploadThing app для изображений и дизайн-ассетов.
-- Stripe account.
-- Домен. Пока домена нет, можно использовать Vercel preview URL, но для production лучше свой домен.
+- GitHub repository: `lonelyy228/proekt`
+- аккаунт Vercel, подключенный к GitHub
+- Neon PostgreSQL или Vercel Postgres
+- Upstash Redis
+- UploadThing app для изображений и дизайн-ассетов
+- Stripe account
+- публичный домен для production
 
-## 2. Создать проект в Vercel
+Пока домен не подключен, можно использовать preview URL от Vercel, но production-куки и финальная интеграция Stripe должны работать уже на реальном домене.
 
-1. Открой Vercel Dashboard.
-2. Нажми `Add New` -> `Project`.
-3. Выбери репозиторий `lonelyy228/proekt`.
-4. Framework должен определиться как `Next.js`.
-5. Build Command оставь стандартный или укажи:
+## 2. Создание проекта в Vercel
+
+1. Открой `Vercel Dashboard`
+2. Нажми `Add New` -> `Project`
+3. Выбери репозиторий `lonelyy228/proekt`
+4. Framework должен определиться как `Next.js`
+5. Укажи Build Command:
 
 ```bash
 npm run build
 ```
 
-6. Install Command:
+6. Укажи Install Command:
 
 ```bash
 npm install
 ```
 
-7. Output Directory не указывай.
+7. `Output Directory` не указывай
 
-## 3. Подключить Postgres
+## 3. Подключение базы данных
 
-Рекомендуемый вариант: Neon.
+Рекомендуемый вариант: `Neon`
 
-1. Создай Neon project.
-2. Скопируй pooled connection string в `DATABASE_URL`.
-3. Скопируй direct connection string в `DIRECT_URL`.
-4. В обеих строках должен быть `sslmode=require`.
+1. Создай новый проект в Neon
+2. Скопируй pooled connection string в `DATABASE_URL`
+3. Скопируй direct connection string в `DIRECT_URL`
+4. Для production в строках подключения должен быть `sslmode=require`
 
 Пример:
 
@@ -48,13 +50,13 @@ DATABASE_URL=postgresql://user:password@ep-example-pooler.region.aws.neon.tech/r
 DIRECT_URL=postgresql://user:password@ep-example.region.aws.neon.tech/rsh?sslmode=require
 ```
 
-## 4. Подключить Redis
+## 4. Подключение Redis
 
-Рекомендуемый вариант: Upstash Redis.
+Рекомендуемый вариант: `Upstash Redis`
 
-1. Создай Redis database.
-2. Скопируй TLS URL.
-3. Вставь в Vercel как `REDIS_URL`.
+1. Создай Redis database
+2. Скопируй TLS URL
+3. Добавь его в Vercel как `REDIS_URL`
 
 Пример:
 
@@ -62,26 +64,27 @@ DIRECT_URL=postgresql://user:password@ep-example.region.aws.neon.tech/rsh?sslmod
 REDIS_URL=rediss://default:password@host.upstash.io:6379
 ```
 
-## 5. Подключить UploadThing
+## 5. Подключение UploadThing
 
-1. Создай app в UploadThing.
-2. Скопируй `UPLOADTHING_TOKEN`.
-3. Скопируй `UPLOADTHING_APP_ID`.
-4. Добавь обе переменные в Vercel.
+1. Создай app в UploadThing
+2. Скопируй `UPLOADTHING_TOKEN`
+3. Скопируй `UPLOADTHING_APP_ID`
+4. Добавь обе переменные в Vercel
 
-Важно: в production нельзя хранить uploads на Vercel filesystem. Только URL и metadata в базе.
+Важно: в production нельзя хранить загруженные файлы на файловой системе Vercel. В базе должны лежать только URL и metadata.
 
-## 6. Подключить Stripe
+## 6. Подключение Stripe
 
-1. В Stripe включи live mode, когда будешь готов принимать реальные платежи.
+1. Подготовь live-ключи Stripe для production
 2. Добавь в Vercel:
 
 ```text
 STRIPE_SECRET_KEY=sk_live_...
+STRIPE_WEBHOOK_SECRET=whsec_...
 STRIPE_PRICE_CURRENCY=rub
 ```
 
-3. После первого Vercel deploy создай webhook endpoint:
+3. После первого deploy создай webhook endpoint:
 
 ```text
 https://your-domain.ru/api/webhooks/stripe
@@ -96,9 +99,7 @@ payment_intent.payment_failed
 charge.refunded
 ```
 
-5. Скопируй webhook signing secret в `STRIPE_WEBHOOK_SECRET`.
-
-## 7. Добавить env variables в Vercel
+## 7. Переменные окружения
 
 Открой `Project Settings` -> `Environment Variables` и перенеси значения из `.env.production.example`.
 
@@ -131,36 +132,34 @@ UPLOADTHING_APP_ID
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
 
-Секреты должны быть разными. Не вставляй локальные demo/test значения в production.
+Секреты должны быть разными. Нельзя использовать локальные demo/test значения в production.
 
-## 8. Проверить env перед деплоем
+## 8. Проверка env перед деплоем
 
-Локально можно проверить файл:
+Локально:
 
 ```powershell
 npm run deploy:env-check -- .env.production.example
 ```
 
-Для Vercel проверка произойдёт во время build через runtime validation, но локальная команда быстрее показывает, чего не хватает.
+Во время production build приложение само проверит runtime-конфигурацию через `src/config/env.ts`, но локальная команда быстрее показывает, чего не хватает.
 
 ## 9. Миграции базы
 
-Для production нельзя полагаться на `prisma db push`. Нужен миграционный путь:
+Для production нельзя полагаться только на `prisma db push`. Нужен миграционный путь:
 
 ```bash
 npm run prisma:deploy
 npm run db:preflight
 ```
 
-В Vercel это обычно делают через CI/job перед production deploy или вручную в trusted terminal с production env.
+Перед публичным деплоем нужно убедиться, что папка `prisma/migrations` актуальна и закоммичена.
 
-Если база пустая, `prisma migrate deploy` создаст таблицы из файлов в `prisma/migrations`.
+## 10. Первый deploy
 
-## 10. Первый деплой
-
-1. Push в `develop`.
-2. Дождись GitHub checks.
-3. На Vercel нажми deploy или дождись auto-deploy.
+1. Push в `develop`
+2. Дождись GitHub checks
+3. На Vercel дождись auto-deploy или запусти deploy вручную
 4. После deploy проверь:
 
 ```text
@@ -174,20 +173,24 @@ npm run db:preflight
 /admin
 ```
 
-5. Сделай smoke-сценарий:
+5. Выполни smoke-проверку:
 
-- регистрация пользователя;
-- добавление товара в корзину;
-- вход/выход;
-- оформление заказа;
-- просмотр заказа в профиле;
-- админка открывается только ADMIN.
+- регистрация пользователя
+- логин/логаут
+- добавление товара в корзину
+- создание checkout session
+- просмотр заказа в профиле
+- доступ администратора к `/admin`
 
-## 11. Если деплой упал
+## 11. Типовые проблемы
 
-- `Invalid production environment configuration` означает, что Vercel env заполнен неправильно.
-- `prisma migrate deploy` failed означает проблему с DB URL или миграциями.
-- Stripe webhook 400 обычно означает неверный `STRIPE_WEBHOOK_SECRET`.
-- Upload 401/403 обычно означает неверный UploadThing token/app id.
+- `Invalid production environment configuration`
+  - неверно заполнены переменные в Vercel
+- `prisma migrate deploy failed`
+  - проблема в `DATABASE_URL` / `DIRECT_URL` или миграциях
+- `Stripe webhook 400`
+  - неверный `STRIPE_WEBHOOK_SECRET`
+- `UploadThing 401/403`
+  - неверный `UPLOADTHING_TOKEN` или `UPLOADTHING_APP_ID`
 
-Не отключай production validation ради быстрого deploy. Она защищает от небезопасной конфигурации.
+Не отключай production validation ради быстрого деплоя. Эта проверка защищает от небезопасной конфигурации.

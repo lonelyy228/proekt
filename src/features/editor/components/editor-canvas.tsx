@@ -69,6 +69,12 @@ type SystemLayerKind = "garment" | "grid";
 type SystemLayerData = {
   systemLayer?: boolean;
   systemLayerKind?: SystemLayerKind;
+  historyId?: string;
+};
+
+type HistorySnapshot = {
+  activeHistoryId: string | null;
+  objects: ReturnType<FabricObject["toObject"]>[];
 };
 
 const CANVAS_DIMENSION = 760;
@@ -107,6 +113,14 @@ const FONT_FAMILIES = ["Space Grotesk", "Arial", "Times New Roman", "Courier New
 const TEXT_COLORS = ["#111111", "#ffffff", "#d91b3a", "#214fce", "#0f8a5f", "#f29f05", "#7a3cff"];
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, value));
+
+const createHistoryId = (): string => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+
+  return `history-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
 type TemplateViewAsset = {
   crop: { x: number; y: number; width: number; height: number };
   printAreaRatio: { left: number; top: number; width: number; height: number };
@@ -682,6 +696,17 @@ const getObjectLabel = (object: FabricObject, index: number): string => {
   return `Слой ${index + 1}`;
 };
 
+const getHistoryId = (object: FabricObject): string | null => {
+  const layerData = (object as FabricObject & { data?: SystemLayerData }).data;
+  return layerData?.historyId ?? null;
+};
+
+const ensureHistoryId = <T extends FabricObject>(object: T): T => {
+  const extended = object as T & { data?: SystemLayerData };
+  extended.data = { ...(extended.data ?? {}), historyId: extended.data?.historyId ?? createHistoryId() };
+  return object;
+};
+
 const getScaledObjectWidth = (object: FabricObject): number => {
   if (typeof object.getScaledWidth === "function") {
     return object.getScaledWidth();
@@ -802,6 +827,9 @@ export const EditorCanvas = (): JSX.Element => {
   const canvasElementRef = useRef<HTMLCanvasElement | null>(null);
   const fabricRef = useRef<Canvas | null>(null);
   const renderNonceRef = useRef(0);
+  const historyStackRef = useRef<HistorySnapshot[]>([]);
+  const historyIndexRef = useRef<number>(-1);
+  const historyRestoreRef = useRef<boolean>(false);
 
   const [garmentType, setGarmentType] = useState<GarmentType>("TSHIRT");
   const [garmentSide, setGarmentSide] = useState<GarmentSide>("FRONT");
@@ -821,6 +849,8 @@ export const EditorCanvas = (): JSX.Element => {
   const [selectedProductId, setSelectedProductId] = useState<string>("");
   const [selectedVariantId, setSelectedVariantId] = useState<string>("");
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [canUndo, setCanUndo] = useState<boolean>(false);
+  const [canRedo, setCanRedo] = useState<boolean>(false);
   const snapToGridEnabledRef = useRef<boolean>(snapToGridEnabled);
 
   const template = useMemo(() => GARMENT_TEMPLATES[garmentType], [garmentType]);
@@ -949,6 +979,120 @@ export const EditorCanvas = (): JSX.Element => {
     }
   }, [getSelectedTextbox]);
 
+  const syncHistoryAvailability = useCallback((): void => {
+    setCanUndo(historyIndexRef.current > 0);
+    setCanRedo(historyIndexRef.current >= 0 && historyIndexRef.current < historyStackRef.current.length - 1);
+  }, []);
+
+  const serializeHistorySnapshot = useCallback((canvas: Canvas): HistorySnapshot => {
+    const activeObject = canvas.getActiveObject();
+
+    return {
+      activeHistoryId: activeObject && !isSystemLayer(activeObject) ? getHistoryId(activeObject) : null,
+      objects: canvas.toObject().objects
+    };
+  }, []);
+
+  const restoreHistorySnapshot = useCallback(
+    async (snapshot: HistorySnapshot): Promise<void> => {
+      const canvas = fabricRef.current;
+      if (!canvas) {
+        return;
+      }
+
+      historyRestoreRef.current = true;
+
+      try {
+        await canvas.loadFromJSON({
+          version: "6.7.1",
+          objects: snapshot.objects
+        });
+
+        const target =
+          snapshot.activeHistoryId === null
+            ? null
+            : canvas
+                .getObjects()
+                .find((object) => !isSystemLayer(object) && getHistoryId(object) === snapshot.activeHistoryId) ?? null;
+
+        if (target) {
+          canvas.setActiveObject(target);
+        } else {
+          canvas.discardActiveObject();
+        }
+
+        canvas.requestRenderAll();
+        refreshLayers();
+        syncTextControlsFromSelection();
+      } finally {
+        historyRestoreRef.current = false;
+      }
+    },
+    [refreshLayers, syncTextControlsFromSelection]
+  );
+
+  const commitHistorySnapshot = useCallback((): void => {
+    const canvas = fabricRef.current;
+    if (!canvas || historyRestoreRef.current) {
+      return;
+    }
+
+    const nextSnapshot = serializeHistorySnapshot(canvas);
+    const nextKey = JSON.stringify({
+      activeHistoryId: nextSnapshot.activeHistoryId,
+      objects: nextSnapshot.objects
+    });
+    const currentSnapshot = historyStackRef.current[historyIndexRef.current];
+
+    if (currentSnapshot) {
+      const currentKey = JSON.stringify({
+        activeHistoryId: currentSnapshot.activeHistoryId,
+        objects: currentSnapshot.objects
+      });
+
+      if (currentKey === nextKey) {
+        syncHistoryAvailability();
+        return;
+      }
+    }
+
+    if (historyIndexRef.current < historyStackRef.current.length - 1) {
+      historyStackRef.current = historyStackRef.current.slice(0, historyIndexRef.current + 1);
+    }
+
+    historyStackRef.current.push(nextSnapshot);
+    historyIndexRef.current = historyStackRef.current.length - 1;
+    syncHistoryAvailability();
+  }, [serializeHistorySnapshot, syncHistoryAvailability]);
+
+  const undoLastChange = useCallback(async (): Promise<void> => {
+    if (historyIndexRef.current <= 0) {
+      return;
+    }
+
+    historyIndexRef.current -= 1;
+    syncHistoryAvailability();
+    const snapshot = historyStackRef.current[historyIndexRef.current];
+
+    if (snapshot) {
+      await restoreHistorySnapshot(snapshot);
+    }
+  }, [restoreHistorySnapshot, syncHistoryAvailability]);
+
+  const redoLastChange = useCallback(async (): Promise<void> => {
+    if (historyIndexRef.current >= historyStackRef.current.length - 1) {
+      return;
+    }
+
+    historyIndexRef.current += 1;
+    syncHistoryAvailability();
+    const snapshot = historyStackRef.current[historyIndexRef.current];
+
+    if (snapshot) {
+      await restoreHistorySnapshot(snapshot);
+    }
+  }, [restoreHistorySnapshot, syncHistoryAvailability]);
+
   const repaintTemplate = useCallback(
     async (canvas: Canvas): Promise<void> => {
       const nonce = ++renderNonceRef.current;
@@ -1044,7 +1188,10 @@ export const EditorCanvas = (): JSX.Element => {
 
     canvas.on("object:added", refreshLayers);
     canvas.on("object:removed", refreshLayers);
-    canvas.on("object:modified", refreshLayers);
+    canvas.on("object:modified", () => {
+      refreshLayers();
+      commitHistorySnapshot();
+    });
     canvas.on("selection:created", syncTextControlsFromSelection);
     canvas.on("selection:updated", syncTextControlsFromSelection);
     canvas.on("selection:cleared", syncTextControlsFromSelection);
@@ -1055,16 +1202,58 @@ export const EditorCanvas = (): JSX.Element => {
       canvas.dispose();
       fabricRef.current = null;
     };
-  }, [refreshLayers, syncTextControlsFromSelection]);
+  }, [commitHistorySnapshot, refreshLayers, syncTextControlsFromSelection]);
 
   useEffect(() => {
     const canvas = fabricRef.current;
     if (!canvas) {
       return;
     }
-    void repaintTemplate(canvas);
-    refreshLayers();
-  }, [garmentType, garmentSide, garmentColor, repaintTemplate, refreshLayers]);
+    void (async () => {
+      await repaintTemplate(canvas);
+      refreshLayers();
+      historyStackRef.current = [];
+      historyIndexRef.current = -1;
+      commitHistorySnapshot();
+    })();
+  }, [garmentType, garmentSide, garmentColor, repaintTemplate, refreshLayers, commitHistorySnapshot]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null;
+      const tagName = target?.tagName ?? "";
+      const isEditableTarget =
+        target?.isContentEditable === true || tagName === "INPUT" || tagName === "TEXTAREA" || tagName === "SELECT";
+
+      if (isEditableTarget) {
+        return;
+      }
+
+      const hasModifier = event.ctrlKey || event.metaKey;
+      if (!hasModifier) {
+        return;
+      }
+
+      const pressedKey = event.key.toLowerCase();
+
+      if (pressedKey === "z" && !event.shiftKey) {
+        event.preventDefault();
+        void undoLastChange();
+        return;
+      }
+
+      if (pressedKey === "y" || (pressedKey === "z" && event.shiftKey)) {
+        event.preventDefault();
+        void redoLastChange();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [redoLastChange, undoLastChange]);
 
   const changeSelectedProduct = (productId: string): void => {
     const product = productsForGarment.find((item) => item.id === productId);
@@ -1078,7 +1267,8 @@ export const EditorCanvas = (): JSX.Element => {
       return;
     }
 
-    const text = new Textbox(textValue.trim() || "RSH custom", {
+    const text = ensureHistoryId(
+      new Textbox(textValue.trim() || "RSH custom", {
       left: activePrintArea.left + 18,
       top: activePrintArea.top + 18,
       width: Math.min(260, Math.round(activePrintArea.width * 0.62)),
@@ -1086,7 +1276,8 @@ export const EditorCanvas = (): JSX.Element => {
       fill: textColor,
       fontFamily,
       editable: true
-    });
+      })
+    );
 
     centerObjectInPrintArea(text, activePrintArea);
     canvas.add(text);
@@ -1094,6 +1285,7 @@ export const EditorCanvas = (): JSX.Element => {
     constrainInsidePrintArea(text, activePrintArea, snapToGridEnabled);
     canvas.requestRenderAll();
     refreshLayers();
+    commitHistorySnapshot();
     setEditorStatus("Текст добавлен.");
   };
 
@@ -1110,6 +1302,7 @@ export const EditorCanvas = (): JSX.Element => {
     selectedTextbox.setCoords();
     canvas.requestRenderAll();
     refreshLayers();
+    commitHistorySnapshot();
   };
 
   const handleTextValueChange = (value: string): void => {
@@ -1147,6 +1340,8 @@ export const EditorCanvas = (): JSX.Element => {
       return;
     }
 
+    ensureHistoryId(image);
+
     const maxWidth = activePrintArea.width * 0.78;
     const maxHeight = activePrintArea.height * 0.78;
 
@@ -1168,6 +1363,7 @@ export const EditorCanvas = (): JSX.Element => {
     constrainInsidePrintArea(image, activePrintArea, snapToGridEnabled);
     canvas.requestRenderAll();
     refreshLayers();
+    commitHistorySnapshot();
   };
 
   const uploadImage = async (event: ChangeEvent<HTMLInputElement>): Promise<void> => {
@@ -1227,6 +1423,7 @@ export const EditorCanvas = (): JSX.Element => {
     selected.set("angle", (selected.angle ?? 0) + angleDelta);
     constrainInsidePrintArea(selected, activePrintArea, false);
     canvas.requestRenderAll();
+    commitHistorySnapshot();
   };
 
   const scaleSelected = (delta: number): void => {
@@ -1243,6 +1440,7 @@ export const EditorCanvas = (): JSX.Element => {
     selected.set({ scaleX: nextScaleX, scaleY: nextScaleY });
     constrainInsidePrintArea(selected, activePrintArea, false);
     canvas.requestRenderAll();
+    commitHistorySnapshot();
   };
 
   const moveLayer = (direction: "UP" | "DOWN"): void => {
@@ -1261,6 +1459,7 @@ export const EditorCanvas = (): JSX.Element => {
 
     canvas.requestRenderAll();
     refreshLayers();
+    commitHistorySnapshot();
   };
 
   const removeSelected = (): void => {
@@ -1273,6 +1472,7 @@ export const EditorCanvas = (): JSX.Element => {
 
     canvas.remove(selected);
     canvas.requestRenderAll();
+    commitHistorySnapshot();
     setEditorStatus("Слой удалён.");
   };
 
@@ -1548,6 +1748,22 @@ export const EditorCanvas = (): JSX.Element => {
             </button>
             <button type="button" onClick={() => scaleSelected(0.1)} className="rounded-md border px-3 py-2 text-sm">
               Масштаб +
+            </button>
+            <button
+              type="button"
+              onClick={() => void undoLastChange()}
+              disabled={!canUndo}
+              className="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Отменить
+            </button>
+            <button
+              type="button"
+              onClick={() => void redoLastChange()}
+              disabled={!canRedo}
+              className="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Повторить
             </button>
             <button type="button" onClick={removeSelected} className="rounded-md border px-3 py-2 text-sm">
               Удалить
