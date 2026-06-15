@@ -779,12 +779,18 @@ const constrainInsidePrintArea = (object: FabricObject, printArea: PrintArea, sn
   const objectHeight = getScaledObjectHeight(object);
 
   const minLeft = printArea.left;
-  const maxLeft = printArea.left + printArea.width - objectWidth;
   const minTop = printArea.top;
-  const maxTop = printArea.top + printArea.height - objectHeight;
+  const maxLeft = printArea.left + Math.max(0, printArea.width - objectWidth);
+  const maxTop = printArea.top + Math.max(0, printArea.height - objectHeight);
 
-  const rawLeft = clamp(object.left ?? minLeft, minLeft, maxLeft);
-  const rawTop = clamp(object.top ?? minTop, minTop, maxTop);
+  const rawLeft =
+    objectWidth >= printArea.width
+      ? printArea.left + Math.round((printArea.width - objectWidth) / 2)
+      : clamp(object.left ?? minLeft, minLeft, maxLeft);
+  const rawTop =
+    objectHeight >= printArea.height
+      ? printArea.top + Math.round((printArea.height - objectHeight) / 2)
+      : clamp(object.top ?? minTop, minTop, maxTop);
 
   const left = snapEnabled ? clampToGrid(rawLeft) : rawLeft;
   const top = snapEnabled ? clampToGrid(rawTop) : rawTop;
@@ -1341,7 +1347,7 @@ export const EditorCanvas = (): JSX.Element => {
       new Textbox(textValue.trim() || "RSH custom", {
       left: activePrintArea.left + 18,
       top: activePrintArea.top + 18,
-      width: Math.min(340, Math.round(activePrintArea.width * 0.82)),
+      width: Math.min(240, Math.round(activePrintArea.width * 0.56)),
       fontSize: textSize,
       fill: textColor,
       fontFamily,
@@ -1473,12 +1479,13 @@ export const EditorCanvas = (): JSX.Element => {
     }
 
     try {
-      const image = await FabricImage.fromURL(imageUrlInput.trim(), { crossOrigin: "anonymous" });
+      const proxiedUrl = `/api/image-proxy?url=${encodeURIComponent(imageUrlInput.trim())}`;
+      const image = await FabricImage.fromURL(proxiedUrl, { crossOrigin: "anonymous" });
       placeImage(image);
       setImageUrlInput("");
       setEditorStatus("Фото по ссылке добавлено.");
     } catch {
-      setEditorStatus("Не удалось загрузить фото по ссылке. Проверь URL и CORS на источнике.");
+      setEditorStatus("Не удалось загрузить фото по ссылке. Проверь URL и доступность изображения.");
     }
   };
 
