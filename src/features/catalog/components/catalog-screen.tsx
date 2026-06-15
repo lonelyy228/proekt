@@ -31,10 +31,13 @@ export const CatalogScreen = ({
   <div className="space-y-6">
     <div>
       <p className="text-xs uppercase tracking-[0.24em] text-primary">RSH Каталог</p>
-      <h1 className="text-5xl tracking-[0.06em]" style={{ fontFamily: "var(--font-heading)" }}>
+      <h1
+        className="max-w-[10ch] text-[2.7rem] leading-[0.92] tracking-[0.04em] sm:max-w-none sm:text-5xl sm:tracking-[0.06em]"
+        style={{ fontFamily: "var(--font-heading)" }}
+      >
         {title}
       </h1>
-      <p className="mt-2 max-w-3xl text-sm text-muted-foreground">{subtitle}</p>
+      <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">{subtitle}</p>
     </div>
 
     {!lockedBrand ? <CatalogBrandRail state={state} /> : null}
@@ -50,7 +53,7 @@ export const CatalogScreen = ({
     {items.length > 0 ? (
       <ProductGrid products={items} />
     ) : (
-      <div className="rounded-xl border bg-card p-6 text-sm text-muted-foreground">
+      <div className="rounded-xl border bg-card p-5 text-sm leading-6 text-muted-foreground sm:p-6">
         По выбранным фильтрам ничего не найдено. Измените диапазон цены или сбросьте часть условий.
       </div>
     )}

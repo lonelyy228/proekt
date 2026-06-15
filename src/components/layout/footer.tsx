@@ -15,7 +15,7 @@ const legalLinks = [
 export const Footer = (): JSX.Element => {
   return (
     <footer className="mt-16 border-t border-border/80 bg-card/85">
-      <div className="mx-auto grid w-full max-w-7xl gap-10 px-6 py-10 lg:grid-cols-[1.1fr_0.9fr_0.9fr]">
+      <div className="mx-auto grid w-full max-w-7xl gap-8 px-5 py-8 sm:px-6 sm:py-10 lg:grid-cols-[1.1fr_0.9fr_0.9fr]">
         <div className="space-y-4">
           <div>
             <p className="text-3xl tracking-[0.28em] text-primary" style={{ fontFamily: "var(--font-heading)" }}>
