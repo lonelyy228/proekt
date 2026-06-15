@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import type { QueryClient } from "@tanstack/react-query";
 import { ensureCsrfToken } from "@/lib/csrf-client";

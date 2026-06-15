@@ -1,131 +1,201 @@
 # Production Env Mapping For RSH
 
-Этот документ нужен для быстрого заполнения production-переменных перед выкладкой RSH на Vercel.
+Этот документ описывает актуальное заполнение production-переменных для запуска RSH в инфраструктуре, которая нормально подходит под РФ.
+
+Главная идея:
+
+- приложение запускается не в `Vercel`, а на своем Linux server / VM;
+- платежи идут через `CloudPayments`;
+- база и Redis могут быть либо managed в РФ-облаке, либо локально на том же сервере;
+- загрузки сейчас лучше запускать через `UPLOAD_PROVIDER=local`, потому что код уже стабилен в этом режиме.
+
+Если нужен полный сценарий выкладки, см. [docs/russia-production-runbook.md](C:/Users/rs998/Documents/Codex/principal-full-stack-engineer-solution-architect/docs/russia-production-runbook.md).
 
 ## 1. Базовые переменные приложения
 
-| Переменная | Что указывать | Откуда взять |
+| Переменная | Что указывать | Пример |
 | --- | --- | --- |
-| `NODE_ENV` | `production` | Указать вручную |
-| `APP_URL` | `https://your-domain.ru` | Домен проекта в Vercel |
-| `COOKIE_DOMAIN` | `your-domain.ru` | Основной домен без `https://` и без порта |
+| `NODE_ENV` | всегда `production` | `production` |
+| `APP_URL` | публичный HTTPS-домен сайта | `https://rsh-store.ru` |
+| `COOKIE_DOMAIN` | домен без `https://` и без порта | `rsh-store.ru` |
 
 Важно:
 
-- `APP_URL` должен быть `https`, без `localhost`.
-- `COOKIE_DOMAIN` не должен содержать `http`, `https` и номер порта.
+- `APP_URL` должен быть на `https`;
+- `COOKIE_DOMAIN` не должен содержать порт;
+- `localhost` и `127.0.0.1` для production запрещены текущей валидацией проекта.
 
-## 2. PostgreSQL / Neon
-
-| Переменная | Что указывать | Откуда взять |
-| --- | --- | --- |
-| `DATABASE_URL` | pooled connection string | Neon -> Dashboard -> Connection Details |
-| `DIRECT_URL` | direct connection string | Neon -> Dashboard -> Connection Details |
-
-Рекомендации:
-
-- `DATABASE_URL` использовать как основной URL Prisma.
-- `DIRECT_URL` использовать для миграций и административных операций.
-- После заполнения обязательно выполнить `npm run prisma:deploy`.
-
-## 3. Redis / Upstash
+## 2. PostgreSQL
 
 | Переменная | Что указывать | Откуда взять |
 | --- | --- | --- |
-| `REDIS_URL` | `rediss://...` | Upstash Redis -> REST / TCP connection string |
+| `DATABASE_URL` | основной PostgreSQL connection string | Managed PostgreSQL или локальный PostgreSQL |
+| `DIRECT_URL` | direct connection string для Prisma migrations | тот же провайдер |
+
+Пример:
+
+```text
+DATABASE_URL=postgresql://rsh_user:strong_password@10.0.0.12:6432/rsh?sslmode=require
+DIRECT_URL=postgresql://rsh_user:strong_password@10.0.0.12:5432/rsh?sslmode=require
+```
 
 Рекомендации:
 
-- Для production использовать именно TLS-вариант `rediss://`.
-- После подключения проверить rate limiting и session-related flows.
+- если используешь managed PostgreSQL с pooler, `DATABASE_URL` лучше направить на pooler;
+- `DIRECT_URL` лучше держать прямым к хосту БД;
+- после заполнения обязательно выполнять `npm run prisma:deploy`.
+
+## 3. Redis
+
+| Переменная | Что указывать | Пример |
+| --- | --- | --- |
+| `REDIS_URL` | Redis URL | `rediss://default:password@redis-host:6379` |
+
+Рекомендации:
+
+- если провайдер дает TLS, используй `rediss://`;
+- если Redis стоит в приватной сети между внутренними сервисами, допустим обычный `redis://`, если это реально ваш изолированный контур;
+- после подключения нужно отдельно проверить rate limit и auth/session flows.
 
 ## 4. JWT и auth secrets
 
-| Переменная | Что указывать | Откуда взять |
-| --- | --- | --- |
-| `JWT_ACCESS_SECRET` | длинный случайный секрет | Сгенерировать вручную |
-| `JWT_REFRESH_SECRET` | другой длинный случайный секрет | Сгенерировать вручную |
-| `JWT_KEY_ID` | версия активного ключа, например `prod-key-1` | Указать вручную |
-| `REFRESH_TOKEN_PEPPER` | отдельная секретная строка | Сгенерировать вручную |
-| `ACCESS_TOKEN_TTL_SECONDS` | `900` | Указать вручную |
-| `REFRESH_TOKEN_TTL_DAYS` | `14` | Указать вручную |
+| Переменная | Что указывать |
+| --- | --- |
+| `JWT_ACCESS_SECRET` | длинный случайный секрет |
+| `JWT_REFRESH_SECRET` | другой длинный случайный секрет |
+| `JWT_KEY_ID` | версия активного ключа, например `rsh-prod-v1` |
+| `REFRESH_TOKEN_PEPPER` | отдельная секретная строка |
+| `ACCESS_TOKEN_TTL_SECONDS` | например `900` |
+| `REFRESH_TOKEN_TTL_DAYS` | например `30` |
 
 Важно:
 
-- `JWT_ACCESS_SECRET` и `JWT_REFRESH_SECRET` должны быть разными.
-- Не копировать тестовые значения в production.
-- Хранить реальные значения только в Vercel Environment Variables.
+- `JWT_ACCESS_SECRET` и `JWT_REFRESH_SECRET` должны быть разными;
+- не использовать локальные demo-значения;
+- хранить эти значения только в секретах панели хостинга, CI или secret manager.
 
-## 5. Stripe
+## 5. Платежи
 
-| Переменная | Что указывать | Откуда взять |
-| --- | --- | --- |
-| `STRIPE_SECRET_KEY` | `sk_live_...` | Stripe Dashboard -> Developers -> API keys |
-| `STRIPE_WEBHOOK_SECRET` | `whsec_...` | Stripe Dashboard -> Developers -> Webhooks |
-| `STRIPE_PRICE_CURRENCY` | `rub` | Указать вручную |
+### Вариант для РФ: CloudPayments
+
+| Переменная | Что указывать |
+| --- | --- |
+| `PAYMENT_PROVIDER` | `cloudpayments` |
+| `CLOUDPAYMENTS_PUBLIC_ID` | Public ID из кабинета CloudPayments |
+| `CLOUDPAYMENTS_API_SECRET` | API Secret из кабинета CloudPayments |
+| `STRIPE_PRICE_CURRENCY` | `rub` |
+
+Пример:
+
+```text
+PAYMENT_PROVIDER=cloudpayments
+CLOUDPAYMENTS_PUBLIC_ID=pk_xxxxxxxxx
+CLOUDPAYMENTS_API_SECRET=xxxxxxxxx
+STRIPE_PRICE_CURRENCY=rub
+```
 
 Важно:
 
-- Для production должен использоваться именно `sk_live_...`.
-- После деплоя нужно создать webhook endpoint на `/api/webhooks/stripe`.
-- После создания webhook обязательно подставить production `whsec_...`.
+- webhook URLs должны смотреть на:
+  - `/api/webhooks/cloudpayments/check`
+  - `/api/webhooks/cloudpayments/pay`
+  - `/api/webhooks/cloudpayments/fail`
+- если запускаешь сайт без реального эквайринга, оставляй `PAYMENT_PROVIDER=manual`.
 
-## 6. UploadThing
+## 6. Uploads
 
-| Переменная | Что указывать | Откуда взять |
-| --- | --- | --- |
-| `UPLOADTHING_TOKEN` | production token | UploadThing Dashboard |
-| `UPLOADTHING_APP_ID` | app id | UploadThing Dashboard |
+### Текущий стабильный production-вариант
 
-Важно:
+| Переменная | Что указывать |
+| --- | --- |
+| `UPLOAD_PROVIDER` | `local` |
 
-- Эти переменные обязательны для production-редактора.
-- Без них загрузка файлов и превью кастомных дизайнов работать не будет.
+Почему так:
+
+- код уже поддерживает `local`;
+- это самый быстрый и надежный запуск без дополнительной интеграции;
+- для S3-совместимого хранилища понадобится отдельный кодовый провайдер, если захочешь увести assets из файловой системы VM.
+
+Примечание:
+
+- при `UPLOAD_PROVIDER=local` нужно настроить регулярные backup файловой директории;
+- если позже перейдем на S3, env mapping можно будет расширить.
 
 ## 7. Магазин и курсовая логика
 
-| Переменная | Что указывать | Откуда взять |
-| --- | --- | --- |
-| `STORE_USD_TO_RUB_RATE` | например `90` | Указать вручную |
+| Переменная | Что указывать |
+| --- | --- |
+| `STORE_USD_TO_RUB_RATE` | например `90` |
 
 Примечание:
 
-- Сейчас проект работает в рублях, поэтому это значение используется как техническая подстраховка для пересчёта legacy-данных.
+- проект уже работает в рублевой логике, так что это значение сейчас скорее техническая страховка для legacy-пересчета.
 
 ## 8. Monitoring
 
-| Переменная | Что указывать | Откуда взять |
-| --- | --- | --- |
-| `SENTRY_DSN` | DSN проекта | Sentry Project Settings |
-| `SENTRY_ERROR_SAMPLE_RATE` | например `1` | Указать вручную |
-| `SENTRY_WARNING_SAMPLE_RATE` | например `0.35` | Указать вручную |
-| `SENTRY_INFO_SAMPLE_RATE` | например `0.05` | Указать вручную |
+| Переменная | Что указывать |
+| --- | --- |
+| `SENTRY_DSN` | DSN проекта |
+| `SENTRY_ERROR_SAMPLE_RATE` | например `1` |
+| `SENTRY_WARNING_SAMPLE_RATE` | например `0.25` |
+| `SENTRY_INFO_SAMPLE_RATE` | например `0.05` |
 
 Примечание:
 
-- `SENTRY_DSN` не является жёстко обязательной для старта, но для публичного запуска крайне рекомендуется.
+- `SENTRY_DSN` не обязателен для первого старта, но очень желателен для публичного запуска.
 
-## 9. Что сделать после заполнения env
+## 9. Минимальный production env пример
 
-В корне проекта выполнить:
+```text
+NODE_ENV=production
+APP_URL=https://rsh-store.ru
+COOKIE_DOMAIN=rsh-store.ru
+
+DATABASE_URL=postgresql://rsh_user:strong_password@10.0.0.12:6432/rsh?sslmode=require
+DIRECT_URL=postgresql://rsh_user:strong_password@10.0.0.12:5432/rsh?sslmode=require
+REDIS_URL=rediss://default:password@10.0.0.13:6379
+
+JWT_ACCESS_SECRET=replace-with-random-64-plus-character-secret
+JWT_REFRESH_SECRET=replace-with-different-random-64-plus-character-secret
+JWT_KEY_ID=rsh-prod-v1
+REFRESH_TOKEN_PEPPER=replace-with-random-32-plus-character-pepper
+ACCESS_TOKEN_TTL_SECONDS=900
+REFRESH_TOKEN_TTL_DAYS=30
+
+PAYMENT_PROVIDER=cloudpayments
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+STRIPE_PRICE_CURRENCY=rub
+CLOUDPAYMENTS_PUBLIC_ID=pk_xxxxxxxxx
+CLOUDPAYMENTS_API_SECRET=xxxxxxxxx
+
+UPLOAD_PROVIDER=local
+UPLOADTHING_TOKEN=
+UPLOADTHING_APP_ID=
+
+STORE_USD_TO_RUB_RATE=90
+
+SENTRY_DSN=
+SENTRY_ERROR_SAMPLE_RATE=1
+SENTRY_WARNING_SAMPLE_RATE=0.25
+SENTRY_INFO_SAMPLE_RATE=0.05
+```
+
+## 10. Что выполнить после заполнения env
 
 ```powershell
-npm run deploy:env-check -- .env.production.example
+node scripts/deploy-env-check.mjs .env.production.example
 npm run prisma:generate
 npm run prisma:deploy
 npm run build
 ```
 
-Если всё проходит локально, можно запускать production deploy в Vercel.
+После этого уже отдельно пройти руками:
 
-## 10. Быстрая последовательность запуска
-
-1. Создать проект в Vercel и подключить GitHub-репозиторий.
-2. Создать базу в Neon.
-3. Создать Redis в Upstash.
-4. Создать приложение в UploadThing.
-5. Создать production keys в Stripe.
-6. Заполнить все env в Vercel.
-7. Выполнить миграции Prisma.
-8. Сделать первый deploy.
-9. Проверить логин, каталог, корзину, checkout, профиль, админку и 2D Lab.
+- регистрация;
+- логин;
+- каталог;
+- корзина;
+- checkout;
+- заказ в профиле;
+- webhook-подтверждение оплаты.

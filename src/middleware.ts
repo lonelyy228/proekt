@@ -10,7 +10,7 @@ const publicApiPaths = [
   "/api/customizer/options",
   "/api/webhooks/stripe"
 ];
-const publicApiPrefixes = ["/api/products"];
+const publicApiPrefixes = ["/api/products", "/api/webhooks/cloudpayments"];
 
 const securityHeaders = {
   "x-frame-options": "DENY",

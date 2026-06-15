@@ -100,7 +100,7 @@ export const orderRepository = {
   findByCheckoutId: (checkoutId: string) =>
     prisma.order.findUnique({
       where: { stripeCheckoutId: checkoutId },
-      include: { items: true }
+      include: { items: true, payments: true }
     }),
 
   findUserOrderById: (params: { userId: string; orderId: string }) =>

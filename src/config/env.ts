@@ -13,10 +13,14 @@ const envSchema = z.object({
   REFRESH_TOKEN_TTL_DAYS: z.coerce.number().int().positive(),
   COOKIE_DOMAIN: z.string().min(1),
   REDIS_URL: z.string().url(),
-  STRIPE_SECRET_KEY: z.string().min(1),
-  STRIPE_WEBHOOK_SECRET: z.string().min(1),
+  PAYMENT_PROVIDER: z.enum(["stripe", "manual", "cloudpayments"]).default("stripe"),
+  STRIPE_SECRET_KEY: z.string().default(""),
+  STRIPE_WEBHOOK_SECRET: z.string().default(""),
   STRIPE_PRICE_CURRENCY: z.string().length(3).default("usd"),
+  CLOUDPAYMENTS_PUBLIC_ID: z.string().default(""),
+  CLOUDPAYMENTS_API_SECRET: z.string().default(""),
   STORE_USD_TO_RUB_RATE: z.coerce.number().positive().default(90),
+  UPLOAD_PROVIDER: z.enum(["uploadthing", "local"]).default("uploadthing"),
   UPLOADTHING_TOKEN: z.string().optional(),
   UPLOADTHING_APP_ID: z.string().optional(),
   SENTRY_DSN: z.string().optional(),
@@ -32,8 +36,28 @@ if (!parsed.success) {
   throw new Error(`Invalid environment configuration: ${details}`);
 }
 
-export const validateProductionEnv = (value: z.infer<typeof envSchema>): void => {
+const shouldEnforceStrictProductionEnv = (value: z.infer<typeof envSchema>): boolean => {
   if (value.NODE_ENV !== "production") {
+    return false;
+  }
+
+  if (process.env.REQUIRE_STRICT_PRODUCTION_ENV === "1") {
+    return true;
+  }
+
+  if (process.env.VERCEL_ENV === "production") {
+    return true;
+  }
+
+  if (process.env.CI === "true") {
+    return true;
+  }
+
+  return false;
+};
+
+export const validateProductionEnv = (value: z.infer<typeof envSchema>): void => {
+  if (!shouldEnforceStrictProductionEnv(value)) {
     return;
   }
 
@@ -61,12 +85,28 @@ export const validateProductionEnv = (value: z.infer<typeof envSchema>): void =>
     issues.push("JWT_ACCESS_SECRET and JWT_REFRESH_SECRET must be different");
   }
 
-  if (!value.UPLOADTHING_TOKEN || !value.UPLOADTHING_APP_ID) {
-    issues.push("UPLOADTHING_TOKEN and UPLOADTHING_APP_ID are required in production");
+  if (value.UPLOAD_PROVIDER === "uploadthing" && (!value.UPLOADTHING_TOKEN || !value.UPLOADTHING_APP_ID)) {
+    issues.push("UPLOADTHING_TOKEN and UPLOADTHING_APP_ID are required when UPLOAD_PROVIDER=uploadthing");
   }
 
-  if (!value.STRIPE_SECRET_KEY.startsWith("sk_live_")) {
-    issues.push("STRIPE_SECRET_KEY must be a live key in production");
+  if (value.PAYMENT_PROVIDER === "stripe") {
+    if (!value.STRIPE_SECRET_KEY.startsWith("sk_live_")) {
+      issues.push("STRIPE_SECRET_KEY must be a live key when PAYMENT_PROVIDER=stripe");
+    }
+
+    if (!value.STRIPE_WEBHOOK_SECRET.startsWith("whsec_")) {
+      issues.push("STRIPE_WEBHOOK_SECRET must be set when PAYMENT_PROVIDER=stripe");
+    }
+  }
+
+  if (value.PAYMENT_PROVIDER === "cloudpayments") {
+    if (!value.CLOUDPAYMENTS_PUBLIC_ID.trim()) {
+      issues.push("CLOUDPAYMENTS_PUBLIC_ID must be set when PAYMENT_PROVIDER=cloudpayments");
+    }
+
+    if (!value.CLOUDPAYMENTS_API_SECRET.trim()) {
+      issues.push("CLOUDPAYMENTS_API_SECRET must be set when PAYMENT_PROVIDER=cloudpayments");
+    }
   }
 
   if (issues.length > 0) {

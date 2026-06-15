@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { FormEvent, Suspense, useMemo, useState } from "react";
@@ -38,6 +38,10 @@ const LoginForm = (): JSX.Element => {
   const successHint = useMemo(
     () => (searchParams.get("registered") === "1" ? "Регистрация завершена. Теперь войдите в аккаунт." : ""),
     [searchParams]
+  );
+  const registerHref = useMemo(
+    () => (nextPath && isSafePath(nextPath) ? `/register?next=${encodeURIComponent(nextPath)}` : "/register"),
+    [nextPath]
   );
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
@@ -154,7 +158,7 @@ const LoginForm = (): JSX.Element => {
 
       <p className="text-sm text-muted-foreground">
         Нет аккаунта?{" "}
-        <Link href="/register" className="text-primary hover:underline">
+        <Link href={registerHref} className="text-primary hover:underline">
           Зарегистрироваться
         </Link>
       </p>

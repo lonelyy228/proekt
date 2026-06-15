@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useMemo } from "react";
@@ -244,7 +244,7 @@ export default function CartPage(): JSX.Element {
             </Link>
             <p className="text-xs text-muted-foreground">
               {isAuthenticated
-                ? "В демо-режиме заказ можно завершить локально без реальной оплаты. В production подключается Stripe Checkout и webhook."
+                ? "В демо-режиме заказ можно завершить локально без реальной оплаты. В production подключается активный платежный провайдер и webhook."
                 : "После входа товары из гостевой корзины будут перенесены в аккаунт и останутся доступны в checkout."}
             </p>
           </aside>

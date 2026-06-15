@@ -1,6 +1,6 @@
-"use client";
+﻿"use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ensureCsrfToken } from "@/lib/csrf-client";
 import { useAuth } from "@/hooks/use-auth";
@@ -115,9 +115,39 @@ const toGuestCartItem = (payload: UpsertCartItemInput): Omit<GuestCartItem, "id"
   customizationColor: payload.customizationColor ?? null
 });
 
+const useGuestCartHydration = (): boolean => {
+  const [hasHydrated, setHasHydrated] = useState<boolean>(false);
+
+  useEffect(() => {
+    const persistApi = useGuestCartStore.persist;
+
+    if (!persistApi) {
+      setHasHydrated(true);
+      return;
+    }
+
+    setHasHydrated(persistApi.hasHydrated());
+
+    const unsubscribeHydrate = persistApi.onHydrate(() => {
+      setHasHydrated(false);
+    });
+    const unsubscribeFinishHydration = persistApi.onFinishHydration(() => {
+      setHasHydrated(true);
+    });
+
+    return () => {
+      unsubscribeHydrate();
+      unsubscribeFinishHydration();
+    };
+  }, []);
+
+  return hasHydrated;
+};
+
 export const useCart = (): UseCartResult => {
   const queryClient = useQueryClient();
   const authQuery = useAuth();
+  const hasGuestCartHydrated = useGuestCartHydration();
   const guestItems = useGuestCartStore((state) => state.items);
   const upsertGuestItem = useGuestCartStore((state) => state.upsertItem);
   const removeGuestItem = useGuestCartStore((state) => state.removeItem);
@@ -255,7 +285,7 @@ export const useCart = (): UseCartResult => {
   if (!isAuthenticated) {
     return {
       data: buildGuestCart(guestItems),
-      isLoading: false,
+      isLoading: authQuery.isLoading || !hasGuestCartHydrated,
       isError: false,
       isAuthenticated: false,
       upsertItem: guestUpsertItem,

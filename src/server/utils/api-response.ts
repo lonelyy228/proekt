@@ -34,7 +34,11 @@ const readRouteContext = (): { endpoint?: string; method?: string; area?: "api" 
     return { endpoint, method, area: undefined };
   }
 
-  if (endpoint === "/api/webhooks/stripe" || endpoint.startsWith("/api/admin/webhooks/stripe")) {
+  if (
+    endpoint === "/api/webhooks/stripe" ||
+    endpoint.startsWith("/api/admin/webhooks/stripe") ||
+    endpoint.startsWith("/api/webhooks/cloudpayments")
+  ) {
     return { endpoint, method, area: "webhook" };
   }
 

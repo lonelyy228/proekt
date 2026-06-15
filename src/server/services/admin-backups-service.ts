@@ -58,14 +58,20 @@ const checkDatabaseReachability = async (): Promise<boolean> => {
 export const adminBackupsService = {
   getSnapshot: async (): Promise<AdminBackupsSnapshot> => {
     const databaseReachable = await checkDatabaseReachability();
-    const uploadConfigured = Boolean(env.UPLOADTHING_TOKEN) && Boolean(env.UPLOADTHING_APP_ID);
+    const uploadConfigured =
+      env.UPLOAD_PROVIDER !== "uploadthing" || (Boolean(env.UPLOADTHING_TOKEN) && Boolean(env.UPLOADTHING_APP_ID));
     const pitrLikelySupported = isPitrLikelySupported();
 
     return {
       generatedAt: new Date().toISOString(),
       provider: {
         database: detectDatabaseProvider(),
-        uploadStorage: uploadConfigured ? "UploadThing Object Storage" : "Не настроено"
+        uploadStorage:
+          env.UPLOAD_PROVIDER === "uploadthing"
+            ? uploadConfigured
+              ? "UploadThing Object Storage"
+              : "Не настроено"
+            : "Local server storage"
       },
       status: {
         databaseReachable,
@@ -81,7 +87,7 @@ export const adminBackupsService = {
       restoreRunbook: [
         "Подтвердить точку восстановления и временно заморозить write-операции storefront/admin",
         "Выполнить restore в новый инстанс БД и прогнать smoke-check auth/checkout/admin",
-        "Переключить DATABASE_URL на восстановленный инстанс и провалидировать Stripe webhooks",
+        "Переключить DATABASE_URL на восстановленный инстанс и провалидировать payment webhooks",
         "Оформить постмортем, обновить алерты и чеклисты реагирования"
       ],
       drills: [
@@ -95,7 +101,7 @@ export const adminBackupsService = {
         {
           name: "Quarterly webhook replay drill",
           cadence: "Ежеквартально",
-          objective: "Проверка replay Stripe событий после восстановления",
+          objective: "Проверка replay payment-событий после восстановления",
           target: "0 lost events",
           owner: "Payments Owner"
         },

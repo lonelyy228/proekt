@@ -3,6 +3,7 @@ import { Bebas_Neue, Space_Grotesk } from "next/font/google";
 import "@/app/globals.css";
 import { Footer } from "@/components/layout/footer";
 import { Header } from "@/components/layout/header";
+import { CookieBanner } from "@/components/layout/cookie-banner";
 import { AppQueryProvider } from "@/lib/query-provider";
 
 const headingFont = Bebas_Neue({
@@ -29,6 +30,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }):
           <Header />
           <main className="mx-auto w-full max-w-7xl px-6 py-10">{children}</main>
           <Footer />
+          <CookieBanner />
         </AppQueryProvider>
       </body>
     </html>

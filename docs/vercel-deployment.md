@@ -1,5 +1,10 @@
 # Deploy RSH on Vercel
 
+> Status: legacy guide.
+>
+> Для текущего production-контура RSH под РФ этот документ больше не является основным.
+> Актуальный путь смотри в [docs/russia-production-runbook.md](C:/Users/rs998/Documents/Codex/principal-full-stack-engineer-solution-architect/docs/russia-production-runbook.md) и [docs/production-env-mapping.md](C:/Users/rs998/Documents/Codex/principal-full-stack-engineer-solution-architect/docs/production-env-mapping.md).
+
 Этот гайд нужен для первого `preview` и `production` деплоя проекта RSH. Локально сайт может работать через Docker, но для публичного запуска нужны managed-сервисы: PostgreSQL, Redis, UploadThing и Stripe.
 
 ## 1. Что подготовить

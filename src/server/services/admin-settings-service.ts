@@ -74,22 +74,36 @@ const getRedisCheck = async (): Promise<AdminRuntimeCheck> => {
 };
 
 const getStripeCheck = (): AdminRuntimeCheck => {
-  const configured = env.STRIPE_SECRET_KEY.length > 0 && env.STRIPE_WEBHOOK_SECRET.length > 0;
+  const configured =
+    env.PAYMENT_PROVIDER === "stripe"
+      ? env.STRIPE_SECRET_KEY.length > 0 && env.STRIPE_WEBHOOK_SECRET.length > 0
+      : env.PAYMENT_PROVIDER === "cloudpayments"
+        ? env.CLOUDPAYMENTS_PUBLIC_ID.length > 0 && env.CLOUDPAYMENTS_API_SECRET.length > 0
+        : true;
 
   return {
     key: "stripe",
-    label: "Stripe",
+    label: "Payments",
     description: "Проверка конфигурации платежного провайдера",
     status: configured ? "HEALTHY" : "CRITICAL",
     passed: configured,
-    message: configured ? `Ключи настроены (API ${stripe.getApiField("version") ?? "default"})` : "Stripe не настроен"
+    message:
+      env.PAYMENT_PROVIDER === "stripe"
+        ? configured
+          ? `Stripe настроен (API ${stripe?.getApiField("version") ?? "default"})`
+          : "Stripe не настроен"
+        : env.PAYMENT_PROVIDER === "cloudpayments"
+          ? configured
+            ? "CloudPayments настроен"
+            : "CloudPayments не настроен"
+        : `Используется провайдер ${env.PAYMENT_PROVIDER}`
   };
 };
 
 const getUploadCheck = (): AdminRuntimeCheck => {
   const hasToken = Boolean(env.UPLOADTHING_TOKEN);
   const hasAppId = Boolean(env.UPLOADTHING_APP_ID);
-  const configured = hasToken && hasAppId;
+  const configured = env.UPLOAD_PROVIDER !== "uploadthing" || (hasToken && hasAppId);
 
   return {
     key: "uploads",
@@ -97,7 +111,12 @@ const getUploadCheck = (): AdminRuntimeCheck => {
     description: "Object storage для ассетов и превью дизайнов",
     status: configured ? "HEALTHY" : "WARNING",
     passed: configured,
-    message: configured ? "UploadThing настроен" : "Проверьте UPLOADTHING_TOKEN и UPLOADTHING_APP_ID"
+    message:
+      env.UPLOAD_PROVIDER === "uploadthing"
+        ? configured
+          ? "UploadThing настроен"
+          : "Проверьте UPLOADTHING_TOKEN и UPLOADTHING_APP_ID"
+        : "Используется локальный upload provider"
   };
 };
 

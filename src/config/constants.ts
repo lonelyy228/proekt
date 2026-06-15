@@ -29,7 +29,7 @@ export const paginationConfig = {
 } as const;
 
 export const rateLimitConfig = {
-  auth: { points: isPlaywrightRuntime ? 200 : 10, durationSeconds: 60 },
+  auth: { points: isPlaywrightRuntime ? 200 : 30, durationSeconds: 60 },
   checkout: { points: 20, durationSeconds: 60 },
   upload: { points: 10, durationSeconds: 60 },
   adminMutation: { points: isPlaywrightRuntime ? 200 : 30, durationSeconds: 60 }

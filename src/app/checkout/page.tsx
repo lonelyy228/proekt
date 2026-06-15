@@ -181,7 +181,7 @@ export default function CheckoutPage(): JSX.Element {
           <div>
             <h1 className="text-4xl font-semibold">Оформление заказа</h1>
             <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-              Проверяем адрес, фиксируем состав корзины и создаём заказ. В демо-режиме оплата завершается локально без реального списания.
+              Проверяем адрес, фиксируем состав корзины и создаём заказ. В демо-режиме заказ может завершаться локально без реального списания.
             </p>
           </div>
           <div className="grid grid-cols-3 overflow-hidden rounded-full border text-xs uppercase tracking-[0.14em] text-muted-foreground">
@@ -299,7 +299,7 @@ export default function CheckoutPage(): JSX.Element {
           </button>
 
           <p className="text-xs text-muted-foreground">
-            В production заказ подтверждается через Stripe webhook. В локальном демо при placeholder-ключе Stripe заказ сразу переходит в статус «Оплачен».
+            В production заказ подтверждается через активный платежный провайдер и его webhook. В локальном демо заказ может сразу перейти в статус «Оплачен».
           </p>
         </form>
 

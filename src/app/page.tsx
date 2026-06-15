@@ -3,10 +3,13 @@
 export default function HomePage(): JSX.Element {
   return (
     <div className="space-y-10">
-      <section className="grid gap-8 rounded-2xl border bg-card/90 p-10 shadow-sm lg:grid-cols-[1.2fr_0.8fr]">
+      <section className="grid gap-8 overflow-hidden rounded-2xl border bg-card/90 p-6 shadow-sm sm:p-10 lg:grid-cols-[1.2fr_0.8fr]">
         <div>
           <p className="text-xs uppercase tracking-[0.28em] text-primary">RSH Брендовый Маркет</p>
-          <h1 className="mt-3 text-6xl leading-[0.9] tracking-[0.05em]" style={{ fontFamily: "var(--font-heading)" }}>
+          <h1
+            className="mt-3 text-[2.75rem] leading-[0.9] tracking-[0.05em] sm:text-6xl"
+            style={{ fontFamily: "var(--font-heading)" }}
+          >
             СТРОГО. МИНИМАЛЬНО. ПО-БРЕНДОВОМУ.
           </h1>
           <p className="mt-5 max-w-2xl text-muted-foreground">
@@ -14,7 +17,7 @@ export default function HomePage(): JSX.Element {
             Nike, Puma, Timberland, Maison Margiela, Gucci, Balenciaga, Off-White, Stone Island, New Balance и других
             брендов. 2D Lab доступен только для линейки RSH BASICS.
           </p>
-          <div className="mt-6 flex gap-3">
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
             <Link href="/catalog" className="rounded-md bg-primary px-4 py-2 text-primary-foreground">
               Перейти в каталог
             </Link>

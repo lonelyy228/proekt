@@ -60,7 +60,8 @@ export const useGuestCartStore = create<GuestCartState>()(
     }),
     {
       name: "rsh-guest-cart",
-      storage: createJSONStorage(() => sessionStorage),
+      version: 2,
+      storage: createJSONStorage(() => localStorage),
       partialize: (state) => ({ items: state.items })
     }
   )

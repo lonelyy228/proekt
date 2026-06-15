@@ -1,8 +1,8 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, Suspense, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import { setCsrfToken } from "@/lib/csrf-client";
 import { mergeGuestCartIntoAccount } from "@/lib/guest-cart-merge";
@@ -23,6 +23,12 @@ type RegisterResponse = {
   };
 };
 
+type PasswordRequirement = {
+  id: string;
+  label: string;
+  isValid: boolean;
+};
+
 const readableValidationMessage = (payload: RegisterResponse): string => {
   const firstDetail = payload.error?.details?.[0]
     ?.replace(/^password:\s*/i, "")
@@ -31,20 +37,19 @@ const readableValidationMessage = (payload: RegisterResponse): string => {
   return firstDetail ?? payload.error?.message ?? "Не удалось зарегистрироваться";
 };
 
-type PasswordRequirement = {
-  id: string;
-  label: string;
-  isValid: boolean;
-};
+const isSafePath = (value: string): boolean => value.startsWith("/") && !value.startsWith("//");
 
-export default function RegisterPage(): JSX.Element {
+const RegisterForm = (): JSX.Element => {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
+  const nextPath = searchParams.get("next");
   const [email, setEmail] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [confirmPassword, setConfirmPassword] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>("");
+
   const passwordRequirements: PasswordRequirement[] = [
     {
       id: "length",
@@ -72,6 +77,7 @@ export default function RegisterPage(): JSX.Element {
       isValid: /[^A-Za-z0-9]/.test(password)
     }
   ];
+
   const passedRequirements = passwordRequirements.filter((requirement) => requirement.isValid).length;
   const passwordStrength =
     password.length === 0 ? "empty" : passedRequirements <= 2 ? "weak" : passedRequirements < passwordRequirements.length ? "medium" : "strong";
@@ -91,6 +97,11 @@ export default function RegisterPage(): JSX.Element {
         : passwordStrength === "weak"
           ? "w-1/3 bg-destructive"
           : "w-0 bg-muted";
+
+  const loginHref = useMemo(
+    () => (nextPath && isSafePath(nextPath) ? `/login?next=${encodeURIComponent(nextPath)}&registered=1` : "/login?registered=1"),
+    [nextPath]
+  );
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault();
@@ -128,7 +139,9 @@ export default function RegisterPage(): JSX.Element {
       });
       await queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
       await mergeGuestCartIntoAccount(queryClient);
-      router.push("/profile");
+      const defaultPath = payload.data.user.role === "ADMIN" ? "/admin" : "/profile";
+      const targetPath = nextPath && isSafePath(nextPath) ? nextPath : defaultPath;
+      router.push(targetPath);
       router.refresh();
     } catch (error: unknown) {
       setErrorMessage(error instanceof Error ? error.message : "Ошибка регистрации. Попробуйте позже.");
@@ -251,11 +264,24 @@ export default function RegisterPage(): JSX.Element {
 
       <p className="text-sm text-muted-foreground">
         Уже есть аккаунт?{" "}
-        <Link href="/login" className="text-primary hover:underline">
+        <Link href={loginHref} className="text-primary hover:underline">
           Войти
         </Link>
       </p>
     </section>
   );
-}
+};
 
+const RegisterPageFallback = (): JSX.Element => (
+  <section className="mx-auto max-w-md space-y-6 rounded-xl border bg-card p-6">
+    <p className="text-sm text-muted-foreground">Подготавливаем форму регистрации...</p>
+  </section>
+);
+
+export default function RegisterPage(): JSX.Element {
+  return (
+    <Suspense fallback={<RegisterPageFallback />}>
+      <RegisterForm />
+    </Suspense>
+  );
+}

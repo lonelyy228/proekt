@@ -12,6 +12,7 @@ type GarmentSide = "FRONT" | "BACK";
 type LayerItem = {
   layerPosition: number;
   label: string;
+  historyId: string | null;
 };
 
 type StatusAction = {
@@ -127,6 +128,9 @@ type TemplateViewAsset = {
   fillSeedRatios: Array<{ x: number; y: number }>;
   maxWidth: number;
   maxHeight: number;
+  offsetX?: number;
+  offsetY?: number;
+  trimPadding?: number;
   layered?: {
     base: string;
     mask: string;
@@ -155,14 +159,16 @@ const TEMPLATE_ASSETS: Record<GarmentType, TemplateAsset> = {
     views: {
       FRONT: {
         crop: { x: 0, y: 0, width: 0.39, height: 1 },
-        printAreaRatio: { left: 0.19, top: 0.18, width: 0.62, height: 0.66 },
+        printAreaRatio: { left: 0.18, top: 0.18, width: 0.64, height: 0.58 },
         fillSeedRatios: [
           { x: 0.5, y: 0.52 },
           { x: 0.24, y: 0.34 },
           { x: 0.76, y: 0.34 }
         ],
-        maxWidth: 460,
-        maxHeight: 500,
+        maxWidth: 560,
+        maxHeight: 600,
+        offsetY: -8,
+        trimPadding: 72,
         layered: {
           base: "/editor/templates/layers/tshirt/tshirt-front-base.png",
           mask: "/editor/templates/layers/tshirt/tshirt-front-mask.png",
@@ -172,14 +178,15 @@ const TEMPLATE_ASSETS: Record<GarmentType, TemplateAsset> = {
       },
       BACK: {
         crop: { x: 0.5, y: 0, width: 0.42, height: 1 },
-        printAreaRatio: { left: 0.19, top: 0.18, width: 0.62, height: 0.68 },
+        printAreaRatio: { left: 0.18, top: 0.16, width: 0.64, height: 0.62 },
         fillSeedRatios: [
           { x: 0.5, y: 0.52 },
           { x: 0.24, y: 0.34 },
           { x: 0.76, y: 0.34 }
         ],
-        maxWidth: 460,
-        maxHeight: 500
+        maxWidth: 560,
+        maxHeight: 600,
+        offsetY: -6
       }
     }
   },
@@ -188,15 +195,17 @@ const TEMPLATE_ASSETS: Record<GarmentType, TemplateAsset> = {
     views: {
       FRONT: {
         crop: { x: 0, y: 0, width: 0.4, height: 1 },
-        printAreaRatio: { left: 0.2, top: 0.2, width: 0.6, height: 0.6 },
+        printAreaRatio: { left: 0.2, top: 0.22, width: 0.6, height: 0.44 },
         fillSeedRatios: [
           { x: 0.5, y: 0.54 },
           { x: 0.2, y: 0.6 },
           { x: 0.8, y: 0.6 },
           { x: 0.5, y: 0.18 }
         ],
-        maxWidth: 500,
-        maxHeight: 560,
+        maxWidth: 590,
+        maxHeight: 680,
+        offsetY: -12,
+        trimPadding: 72,
         layered: {
           base: "/editor/templates/layers/hoodie/hoodie-front-base.png",
           mask: "/editor/templates/layers/hoodie/hoodie-front-mask.png",
@@ -206,15 +215,16 @@ const TEMPLATE_ASSETS: Record<GarmentType, TemplateAsset> = {
       },
       BACK: {
         crop: { x: 0.5, y: 0, width: 0.44, height: 1 },
-        printAreaRatio: { left: 0.2, top: 0.2, width: 0.6, height: 0.6 },
+        printAreaRatio: { left: 0.19, top: 0.18, width: 0.62, height: 0.5 },
         fillSeedRatios: [
           { x: 0.5, y: 0.54 },
           { x: 0.18, y: 0.58 },
           { x: 0.82, y: 0.58 },
           { x: 0.5, y: 0.18 }
         ],
-        maxWidth: 500,
-        maxHeight: 560
+        maxWidth: 590,
+        maxHeight: 680,
+        offsetY: -10
       }
     }
   },
@@ -223,13 +233,15 @@ const TEMPLATE_ASSETS: Record<GarmentType, TemplateAsset> = {
     views: {
       FRONT: {
         crop: { x: 0, y: 0, width: 0.52, height: 1 },
-        printAreaRatio: { left: 0.15, top: 0.18, width: 0.7, height: 0.6 },
+        printAreaRatio: { left: 0.14, top: 0.16, width: 0.72, height: 0.5 },
         fillSeedRatios: [
           { x: 0.35, y: 0.5 },
           { x: 0.65, y: 0.5 }
         ],
-        maxWidth: 480,
-        maxHeight: 380,
+        maxWidth: 570,
+        maxHeight: 470,
+        offsetY: 8,
+        trimPadding: 64,
         layered: {
           base: "/editor/templates/layers/shorts/shorts-front-base.png",
           mask: "/editor/templates/layers/shorts/shorts-front-mask.png",
@@ -239,13 +251,14 @@ const TEMPLATE_ASSETS: Record<GarmentType, TemplateAsset> = {
       },
       BACK: {
         crop: { x: 0.5, y: 0, width: 0.46, height: 1 },
-        printAreaRatio: { left: 0.15, top: 0.18, width: 0.7, height: 0.6 },
+        printAreaRatio: { left: 0.14, top: 0.16, width: 0.72, height: 0.52 },
         fillSeedRatios: [
           { x: 0.35, y: 0.5 },
           { x: 0.65, y: 0.5 }
         ],
-        maxWidth: 480,
-        maxHeight: 380
+        maxWidth: 570,
+        maxHeight: 470,
+        offsetY: 10
       }
     }
   }
@@ -261,6 +274,25 @@ const parseHexColor = (hex: string): [number, number, number] => {
   }
 
   return [parseInt(normalized.slice(0, 2), 16), parseInt(normalized.slice(2, 4), 16), parseInt(normalized.slice(4, 6), 16)];
+};
+
+const positionTemplateFromBounds = (
+  garmentBounds: PrintArea,
+  view: TemplateViewAsset
+): { left: number; top: number; printArea: PrintArea } => {
+  const left = Math.round((CANVAS_DIMENSION - garmentBounds.width) / 2 - garmentBounds.left + (view.offsetX ?? 0));
+  const top = Math.round((CANVAS_DIMENSION - garmentBounds.height) / 2 - garmentBounds.top + (view.offsetY ?? 0));
+
+  return {
+    left,
+    top,
+    printArea: {
+      left: left + garmentBounds.left + Math.round(garmentBounds.width * view.printAreaRatio.left),
+      top: top + garmentBounds.top + Math.round(garmentBounds.height * view.printAreaRatio.top),
+      width: Math.round(garmentBounds.width * view.printAreaRatio.width),
+      height: Math.round(garmentBounds.height * view.printAreaRatio.height)
+    }
+  };
 };
 
 const imageHasVisibleAlpha = (image: HTMLImageElement): boolean => {
@@ -446,7 +478,7 @@ const buildRasterTemplate = async (
 
     sourceContext.drawImage(linesImage, 0, 0, sourceCanvas.width, sourceCanvas.height);
 
-    const padding = 140;
+    const padding = view.trimPadding ?? 72;
     const cropX = clamp(minX - padding, 0, sourceCanvas.width - 1);
     const cropY = clamp(minY - padding, 0, sourceCanvas.height - 1);
     const cropWidth = clamp(maxX - minX + 1 + padding * 2, 1, sourceCanvas.width - cropX);
@@ -467,22 +499,21 @@ const buildRasterTemplate = async (
 
     context.drawImage(sourceCanvas, cropX, cropY, cropWidth, cropHeight, 0, 0, renderWidth, renderHeight);
 
-    const left = Math.round((CANVAS_DIMENSION - renderWidth) / 2);
-    const top = Math.round((CANVAS_DIMENSION - renderHeight) / 2);
-    const printArea: PrintArea = {
-      left: left + Math.round(renderWidth * view.printAreaRatio.left),
-      top: top + Math.round(renderHeight * view.printAreaRatio.top),
-      width: Math.round(renderWidth * view.printAreaRatio.width),
-      height: Math.round(renderHeight * view.printAreaRatio.height)
+    const garmentBounds: PrintArea = {
+      left: Math.round((minX - cropX) * scale),
+      top: Math.round((minY - cropY) * scale),
+      width: Math.max(1, Math.round((maxX - minX + 1) * scale)),
+      height: Math.max(1, Math.round((maxY - minY + 1) * scale))
     };
+    const positioned = positionTemplateFromBounds(garmentBounds, view);
 
     return {
       dataUrl: offscreen.toDataURL("image/png"),
-      left,
-      top,
+      left: positioned.left,
+      top: positioned.top,
       width: renderWidth,
       height: renderHeight,
-      printArea
+      printArea: positioned.printArea
     };
   }
 
@@ -514,6 +545,10 @@ const buildRasterTemplate = async (
   const lineThreshold = TEMPLATE_LINE_THRESHOLD;
   const background = new Uint8Array(fullWidth * fullHeight);
   const queue: number[] = [];
+  let garmentMinX = fullWidth;
+  let garmentMinY = fullHeight;
+  let garmentMaxX = -1;
+  let garmentMaxY = -1;
 
   const pushBackgroundSeed = (x: number, y: number): void => {
     const pixelPosition = y * fullWidth + x;
@@ -608,6 +643,13 @@ const buildRasterTemplate = async (
       continue;
     }
 
+    const pixelX = pixelPosition % fullWidth;
+    const pixelY = Math.floor(pixelPosition / fullWidth);
+    garmentMinX = Math.min(garmentMinX, pixelX);
+    garmentMinY = Math.min(garmentMinY, pixelY);
+    garmentMaxX = Math.max(garmentMaxX, pixelX);
+    garmentMaxY = Math.max(garmentMaxY, pixelY);
+
     pixels[index] = colorR;
     pixels[index + 1] = colorG;
     pixels[index + 2] = colorB;
@@ -622,7 +664,7 @@ const buildRasterTemplate = async (
   context.putImageData(trimmedData, 0, 0);
   context.save();
   context.globalCompositeOperation = "source-atop";
-  context.globalAlpha = garmentSide === "BACK" ? 0.52 : 0.34;
+  context.globalAlpha = garmentSide === "BACK" ? 0.36 : 0.28;
   context.drawImage(source, cropX, cropY, cropWidth, cropHeight, 0, 0, renderWidth, renderHeight);
   context.restore();
 
@@ -648,22 +690,29 @@ const buildRasterTemplate = async (
   );
   applySyntheticGarmentDepth(preparedContext, trimmedWidth, trimmedHeight, garmentType);
 
-  const left = Math.round((CANVAS_DIMENSION - trimmedWidth) / 2);
-  const top = Math.round((CANVAS_DIMENSION - trimmedHeight) / 2);
-  const printArea: PrintArea = {
-    left: left + Math.round(trimmedWidth * view.printAreaRatio.left),
-    top: top + Math.round(trimmedHeight * view.printAreaRatio.top),
-    width: Math.round(trimmedWidth * view.printAreaRatio.width),
-    height: Math.round(trimmedHeight * view.printAreaRatio.height)
-  };
+  const garmentBounds: PrintArea =
+    garmentMaxX >= garmentMinX && garmentMaxY >= garmentMinY
+      ? {
+          left: garmentMinX,
+          top: garmentMinY,
+          width: garmentMaxX - garmentMinX + 1,
+          height: garmentMaxY - garmentMinY + 1
+        }
+      : {
+          left: 0,
+          top: 0,
+          width: trimmedWidth,
+          height: trimmedHeight
+        };
+  const positioned = positionTemplateFromBounds(garmentBounds, view);
 
   return {
     dataUrl: preparedCanvas.toDataURL("image/png"),
-    left,
-    top,
+    left: positioned.left,
+    top: positioned.top,
     width: trimmedWidth,
     height: trimmedHeight,
-    printArea
+    printArea: positioned.printArea
   };
 };
 
@@ -813,8 +862,14 @@ const createExportPayload = (canvas: Canvas): { canvasJson: unknown; previewUrl:
   canvas.requestRenderAll();
 
   try {
+    const serializedCanvas = canvas.toObject() as { objects?: Array<Record<string, unknown>> };
+    serializedCanvas.objects = canvas
+      .getObjects()
+      .filter((object) => !isSystemLayer(object))
+      .map((object) => object.toObject() as Record<string, unknown>);
+
     return {
-      canvasJson: canvas.toJSON(),
+      canvasJson: serializedCanvas,
       previewUrl: canvas.toDataURL({ format: "webp", quality: 0.9, multiplier: 1 })
     };
   } finally {
@@ -839,7 +894,7 @@ export const EditorCanvas = (): JSX.Element => {
   const [textValue, setTextValue] = useState<string>("RSH custom");
   const [textSize, setTextSize] = useState<number>(34);
   const [showGrid, setShowGrid] = useState<boolean>(false);
-  const [snapToGridEnabled, setSnapToGridEnabled] = useState<boolean>(true);
+  const [snapToGridEnabled, setSnapToGridEnabled] = useState<boolean>(false);
   const [imageUrlInput, setImageUrlInput] = useState<string>("");
   const [layers, setLayers] = useState<LayerItem[]>([]);
   const [statusMessage, setStatusMessage] = useState<string>("");
@@ -851,6 +906,8 @@ export const EditorCanvas = (): JSX.Element => {
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [canUndo, setCanUndo] = useState<boolean>(false);
   const [canRedo, setCanRedo] = useState<boolean>(false);
+  const [selectedLayerHistoryId, setSelectedLayerHistoryId] = useState<string | null>(null);
+  const [hasEditableSelection, setHasEditableSelection] = useState<boolean>(false);
   const snapToGridEnabledRef = useRef<boolean>(snapToGridEnabled);
 
   const template = useMemo(() => GARMENT_TEMPLATES[garmentType], [garmentType]);
@@ -949,7 +1006,8 @@ export const EditorCanvas = (): JSX.Element => {
     setLayers(
       editable.map((object, index) => ({
         layerPosition: index,
-        label: getObjectLabel(object, index)
+        label: getObjectLabel(object, index),
+        historyId: getHistoryId(object)
       }))
     );
   }, [getEditableObjects]);
@@ -966,7 +1024,14 @@ export const EditorCanvas = (): JSX.Element => {
   }, []);
 
   const syncTextControlsFromSelection = useCallback((): void => {
-    const selectedTextbox = getSelectedTextbox();
+    const canvas = fabricRef.current;
+    const activeObject = canvas?.getActiveObject();
+    const editableSelection = activeObject && !isSystemLayer(activeObject) ? activeObject : null;
+
+    setHasEditableSelection(Boolean(editableSelection));
+    setSelectedLayerHistoryId(editableSelection ? getHistoryId(editableSelection) : null);
+
+    const selectedTextbox = editableSelection instanceof Textbox ? editableSelection : null;
     if (!selectedTextbox) {
       return;
     }
@@ -977,7 +1042,7 @@ export const EditorCanvas = (): JSX.Element => {
     if (typeof selectedTextbox.fill === "string") {
       setTextColor(selectedTextbox.fill);
     }
-  }, [getSelectedTextbox]);
+  }, []);
 
   const syncHistoryAvailability = useCallback((): void => {
     setCanUndo(historyIndexRef.current > 0);
@@ -1174,7 +1239,7 @@ export const EditorCanvas = (): JSX.Element => {
         return;
       }
 
-      constrainInsidePrintArea(target, printAreaRef.current, snapToGridEnabledRef.current);
+      constrainInsidePrintArea(target, printAreaRef.current, false);
     });
 
     canvas.on("object:scaling", (event) => {
@@ -1188,7 +1253,12 @@ export const EditorCanvas = (): JSX.Element => {
 
     canvas.on("object:added", refreshLayers);
     canvas.on("object:removed", refreshLayers);
-    canvas.on("object:modified", () => {
+    canvas.on("object:modified", (event) => {
+      const target = event.target;
+      if (target && !isSystemLayer(target)) {
+        constrainInsidePrintArea(target, printAreaRef.current, snapToGridEnabledRef.current);
+      }
+
       refreshLayers();
       commitHistorySnapshot();
     });
@@ -1271,7 +1341,7 @@ export const EditorCanvas = (): JSX.Element => {
       new Textbox(textValue.trim() || "RSH custom", {
       left: activePrintArea.left + 18,
       top: activePrintArea.top + 18,
-      width: Math.min(260, Math.round(activePrintArea.width * 0.62)),
+      width: Math.min(340, Math.round(activePrintArea.width * 0.82)),
       fontSize: textSize,
       fill: textColor,
       fontFamily,
@@ -1727,7 +1797,7 @@ export const EditorCanvas = (): JSX.Element => {
         </div>
       </section>
 
-      <section className="grid gap-4 rounded-2xl border bg-card p-3 shadow-sm lg:grid-cols-[280px_minmax(0,1fr)_280px] lg:p-4">
+      <section className="grid gap-4 rounded-2xl border bg-card p-3 shadow-sm lg:grid-cols-[260px_minmax(0,1fr)_260px] xl:grid-cols-[280px_minmax(0,1fr)_280px] lg:p-4">
         <div className="space-y-3 lg:order-1">
           <div className="flex flex-wrap gap-2">
             <button type="button" onClick={addText} className="rounded-md bg-primary px-3 py-2 text-sm text-primary-foreground">
@@ -1737,16 +1807,36 @@ export const EditorCanvas = (): JSX.Element => {
               Загрузить фото
               <input type="file" className="hidden" accept="image/*" onChange={uploadImage} />
             </label>
-            <button type="button" onClick={() => rotateSelected(-15)} className="rounded-md border px-3 py-2 text-sm">
+            <button
+              type="button"
+              onClick={() => rotateSelected(-15)}
+              disabled={!hasEditableSelection}
+              className="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            >
               -15°
             </button>
-            <button type="button" onClick={() => rotateSelected(15)} className="rounded-md border px-3 py-2 text-sm">
+            <button
+              type="button"
+              onClick={() => rotateSelected(15)}
+              disabled={!hasEditableSelection}
+              className="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            >
               +15°
             </button>
-            <button type="button" onClick={() => scaleSelected(-0.1)} className="rounded-md border px-3 py-2 text-sm">
+            <button
+              type="button"
+              onClick={() => scaleSelected(-0.1)}
+              disabled={!hasEditableSelection}
+              className="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            >
               Масштаб -
             </button>
-            <button type="button" onClick={() => scaleSelected(0.1)} className="rounded-md border px-3 py-2 text-sm">
+            <button
+              type="button"
+              onClick={() => scaleSelected(0.1)}
+              disabled={!hasEditableSelection}
+              className="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            >
               Масштаб +
             </button>
             <button
@@ -1765,7 +1855,12 @@ export const EditorCanvas = (): JSX.Element => {
             >
               Повторить
             </button>
-            <button type="button" onClick={removeSelected} className="rounded-md border px-3 py-2 text-sm">
+            <button
+              type="button"
+              onClick={removeSelected}
+              disabled={!hasEditableSelection}
+              className="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            >
               Удалить
             </button>
           </div>
@@ -1865,8 +1960,10 @@ export const EditorCanvas = (): JSX.Element => {
         </div>
 
         <div className="space-y-3 lg:order-2">
-          <div className="overflow-auto rounded-2xl border bg-[#f3f1ec] p-2 shadow-inner">
-            <canvas ref={canvasElementRef} className="mx-auto block" />
+          <div className="overflow-auto rounded-2xl border bg-[#f3f1ec] p-3 shadow-inner">
+            <div className="flex min-h-[760px] min-w-[620px] items-center justify-center">
+              <canvas ref={canvasElementRef} className="mx-auto block" />
+            </div>
           </div>
 
           <div className="flex flex-wrap items-center gap-3 rounded-xl border bg-background/80 p-3">
@@ -1902,10 +1999,20 @@ export const EditorCanvas = (): JSX.Element => {
         <aside className="rounded-xl border bg-background/80 p-3 lg:order-3">
           <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Слои</p>
           <div className="mt-2 flex gap-2">
-            <button type="button" onClick={() => moveLayer("UP")} className="rounded-md border px-3 py-2 text-sm">
+            <button
+              type="button"
+              onClick={() => moveLayer("UP")}
+              disabled={!hasEditableSelection}
+              className="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            >
               Вверх
             </button>
-            <button type="button" onClick={() => moveLayer("DOWN")} className="rounded-md border px-3 py-2 text-sm">
+            <button
+              type="button"
+              onClick={() => moveLayer("DOWN")}
+              disabled={!hasEditableSelection}
+              className="rounded-md border px-3 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+            >
               Вниз
             </button>
           </div>
@@ -1921,7 +2028,9 @@ export const EditorCanvas = (): JSX.Element => {
                 key={`${layer.layerPosition}-${layer.label}`}
                 type="button"
                 onClick={() => selectLayer(layer.layerPosition)}
-                className="w-full rounded-md border px-3 py-2 text-left text-sm transition hover:border-primary hover:text-primary"
+                className={`w-full rounded-md border px-3 py-2 text-left text-sm transition hover:border-primary hover:text-primary ${
+                  layer.historyId !== null && layer.historyId === selectedLayerHistoryId ? "border-primary bg-primary/5 text-primary" : ""
+                }`}
               >
                 {layer.label}
               </button>

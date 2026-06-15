@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { cartService } from "@/server/services/cart-service";
 import { orderRepository } from "@/server/repositories/order-repository";
 import { stripe } from "@/lib/stripe";
+import { createCloudPaymentsInvoice, parseCloudPaymentsWebhookBody, verifyCloudPaymentsSignature } from "@/lib/cloudpayments";
 import { env } from "@/config/env";
 import { isCustomizerBaseBrand, CUSTOMIZER_BRAND_RESTRICTION_MESSAGE } from "@/config/customizer";
 import { AppError } from "@/server/utils/errors";
@@ -34,6 +35,9 @@ export const shouldUseLocalCheckoutFallback = (params: {
   return PLACEHOLDER_STRIPE_KEY_MARKERS.some((marker) => normalizedKey.includes(marker));
 };
 
+const shouldUseManualCheckoutFallback = (): boolean => env.PAYMENT_PROVIDER === "manual";
+const shouldUseCloudPaymentsCheckout = (): boolean => env.PAYMENT_PROVIDER === "cloudpayments";
+
 const resolveCartCurrency = (items: Array<{ currency: string }>): string => {
   const currencies = new Set(items.map((item) => item.currency.trim().toUpperCase()));
 
@@ -52,6 +56,12 @@ const resolveCartCurrency = (items: Array<{ currency: string }>): string => {
 
 const buildCheckoutSuccessUrl = (successUrl: string, orderId: string, sessionId: string): string =>
   appendQuery(appendQuery(successUrl, "order_id", orderId), "session_id", sessionId);
+
+const buildCloudPaymentsMetadata = (params: { orderId: string; userId: string; currency: string }) => ({
+  orderId: params.orderId,
+  userId: params.userId,
+  currency: params.currency
+});
 
 const validateCheckoutItemReferences = async (
   userId: string,
@@ -138,6 +148,40 @@ const processStripeEvent = async (
   return { processed: true };
 };
 
+type CheckoutOrder = NonNullable<Awaited<ReturnType<typeof orderRepository.findByCheckoutId>>>;
+
+const validateCloudPaymentsNotification = async (
+  rawBody: string,
+  signature: string
+): Promise<{
+  order: CheckoutOrder;
+  notification: ReturnType<typeof parseCloudPaymentsWebhookBody>;
+}> => {
+  if (env.PAYMENT_PROVIDER !== "cloudpayments") {
+    throw new AppError("EXTERNAL_PROVIDER_ERROR", "CloudPayments webhook endpoint is disabled for the current payment provider");
+  }
+
+  if (!verifyCloudPaymentsSignature(rawBody, signature)) {
+    throw new AppError("FORBIDDEN", "Invalid CloudPayments signature");
+  }
+
+  const notification = parseCloudPaymentsWebhookBody(rawBody);
+  if (!notification.invoiceId) {
+    throw new AppError("VALIDATION_ERROR", "CloudPayments invoice id is missing");
+  }
+
+  if (notification.amountCents === null) {
+    throw new AppError("VALIDATION_ERROR", "CloudPayments amount is invalid");
+  }
+
+  const order = await orderRepository.findByCheckoutId(notification.invoiceId);
+  if (!order) {
+    throw new AppError("NOT_FOUND", "Order not found for CloudPayments invoice");
+  }
+
+  return { order: order as CheckoutOrder, notification };
+};
+
 export const checkoutService = {
   createCheckoutSession: async (userId: string, payload: {
     successUrl: string;
@@ -195,7 +239,10 @@ export const checkoutService = {
       }
     });
 
-    if (shouldUseLocalCheckoutFallback({ nodeEnv: env.NODE_ENV, stripeSecretKey: env.STRIPE_SECRET_KEY })) {
+    if (
+      env.PAYMENT_PROVIDER === "stripe" &&
+      shouldUseLocalCheckoutFallback({ nodeEnv: env.NODE_ENV, stripeSecretKey: env.STRIPE_SECRET_KEY })
+    ) {
       const localCheckoutId = `dev_checkout_${order.id}`;
       await prisma.$transaction([
         prisma.order.update({
@@ -227,6 +274,80 @@ export const checkoutService = {
         orderId: order.id,
         mode: "local" as const
       };
+    }
+
+    if (shouldUseManualCheckoutFallback()) {
+      const manualCheckoutId = `manual_checkout_${order.id}`;
+      await prisma.$transaction([
+        prisma.order.update({
+          where: { id: order.id },
+          data: {
+            status: OrderStatus.PAID,
+            stripeCheckoutId: manualCheckoutId
+          }
+        }),
+        prisma.payment.create({
+          data: {
+            orderId: order.id,
+            provider: PaymentProvider.MANUAL,
+            status: PaymentStatus.SUCCEEDED,
+            amountCents: totalCents,
+            currency: checkoutCurrency,
+            providerPayload: {
+              mode: "manual-payment-provider",
+              paymentProvider: env.PAYMENT_PROVIDER
+            }
+          }
+        }),
+        cartRepository.clearByUserId(userId)
+      ]);
+
+      return {
+        checkoutUrl: buildCheckoutSuccessUrl(payload.successUrl, order.id, manualCheckoutId),
+        orderId: order.id,
+        mode: "manual" as const
+      };
+    }
+
+    if (shouldUseCloudPaymentsCheckout()) {
+      let invoice;
+
+      try {
+        invoice = await createCloudPaymentsInvoice({
+          amountCents: totalCents,
+          currency: checkoutCurrency,
+          invoiceId: order.id,
+          accountId: userId,
+          description: `RSH order ${order.id}`,
+          metadata: buildCloudPaymentsMetadata({
+            orderId: order.id,
+            userId,
+            currency: checkoutCurrency
+          })
+        });
+      } catch (error: unknown) {
+        throw new AppError(
+          "EXTERNAL_PROVIDER_ERROR",
+          error instanceof Error ? `CloudPayments checkout failed: ${error.message}` : "CloudPayments checkout failed"
+        );
+      }
+
+      await prisma.order.update({
+        where: { id: order.id },
+        data: {
+          stripeCheckoutId: invoice.invoiceId
+        }
+      });
+
+      return {
+        checkoutUrl: invoice.checkoutUrl,
+        orderId: order.id,
+        mode: "cloudpayments" as const
+      };
+    }
+
+    if (!stripe) {
+      throw new AppError("EXTERNAL_PROVIDER_ERROR", "Stripe provider is not configured");
     }
 
     let session: Stripe.Checkout.Session;
@@ -272,8 +393,126 @@ export const checkoutService = {
   },
 
   processStripeWebhook: async (signature: string, rawBody: string) => {
+    if (env.PAYMENT_PROVIDER !== "stripe" || !stripe) {
+      throw new AppError("EXTERNAL_PROVIDER_ERROR", "Stripe webhook endpoint is disabled for the current payment provider");
+    }
+
     const event = stripe.webhooks.constructEvent(rawBody, signature, env.STRIPE_WEBHOOK_SECRET);
     return processStripeEvent(event);
+  },
+
+  processCloudPaymentsCheckWebhook: async (signature: string, rawBody: string) => {
+    const { order, notification } = await validateCloudPaymentsNotification(rawBody, signature);
+
+    if (order.totalCents !== notification.amountCents) {
+      return {
+        code: 12,
+        processed: false
+      };
+    }
+
+    if (notification.currency && notification.currency !== order.currency.toUpperCase()) {
+      return {
+        code: 13,
+        processed: false
+      };
+    }
+
+    return {
+      code: 0,
+      processed: true
+    };
+  },
+
+  processCloudPaymentsPayWebhook: async (signature: string, rawBody: string) => {
+    const { order, notification } = await validateCloudPaymentsNotification(rawBody, signature);
+
+    if (order.totalCents !== notification.amountCents) {
+      return {
+        code: 12,
+        processed: false
+      };
+    }
+
+    if (notification.currency && notification.currency !== order.currency.toUpperCase()) {
+      return {
+        code: 13,
+        processed: false
+      };
+    }
+
+    const existingSucceededPayment = order.payments.find(
+      (payment) =>
+        payment.provider === PaymentProvider.CLOUDPAYMENTS &&
+        payment.status === PaymentStatus.SUCCEEDED &&
+        (notification.transactionId ? payment.stripeChargeId === notification.transactionId : true)
+    );
+
+    if (existingSucceededPayment || order.status === OrderStatus.PAID) {
+      return {
+        code: 0,
+        processed: true,
+        duplicate: true
+      };
+    }
+
+    await prisma.$transaction([
+      prisma.order.update({
+        where: { id: order.id },
+        data: {
+          status: OrderStatus.PAID
+        }
+      }),
+      prisma.payment.create({
+        data: {
+          orderId: order.id,
+          provider: PaymentProvider.CLOUDPAYMENTS,
+          status: PaymentStatus.SUCCEEDED,
+          amountCents: order.totalCents,
+          currency: order.currency,
+          stripePaymentIntentId: order.stripeCheckoutId,
+          stripeChargeId: notification.transactionId,
+          providerPayload: notification.raw as Prisma.InputJsonValue
+        }
+      }),
+      cartRepository.clearByUserId(order.userId)
+    ]);
+
+    return {
+      code: 0,
+      processed: true
+    };
+  },
+
+  processCloudPaymentsFailWebhook: async (signature: string, rawBody: string) => {
+    const { order, notification } = await validateCloudPaymentsNotification(rawBody, signature);
+
+    const existingFailedPayment = order.payments.find(
+      (payment) =>
+        payment.provider === PaymentProvider.CLOUDPAYMENTS &&
+        payment.status === PaymentStatus.FAILED &&
+        (notification.transactionId ? payment.stripeChargeId === notification.transactionId : true)
+    );
+
+    if (!existingFailedPayment) {
+      await prisma.payment.create({
+        data: {
+          orderId: order.id,
+          provider: PaymentProvider.CLOUDPAYMENTS,
+          status: PaymentStatus.FAILED,
+          amountCents: notification.amountCents ?? order.totalCents,
+          currency: notification.currency ?? order.currency,
+          stripePaymentIntentId: order.stripeCheckoutId,
+          stripeChargeId: notification.transactionId,
+          providerPayload: notification.raw as Prisma.InputJsonValue
+        }
+      });
+    }
+
+    return {
+      code: 0,
+      processed: true
+    };
   },
 
   replayStoredEvent: async (eventId: string) => {

@@ -9,11 +9,15 @@ type ProductImageInput = {
   alt: string;
 };
 
+const DEFAULT_ADMIN_PRODUCT_IMAGE = "/product-images/catalog-placeholder.svg";
+
 const sanitizeProductImages = (images?: ProductImageInput[]): ProductImageInput[] | undefined =>
   images?.slice(0, 3).map((image) => ({
     url: image.url.trim(),
     alt: sanitizeText(image.alt)
   }));
+
+const buildDefaultVariantSku = (slug: string): string => `RSH-${slug.toUpperCase().replace(/[^A-Z0-9]+/g, "-")}-OS`;
 
 const resolveCustomizerGarmentType = (tags: string[]): "TSHIRT" | "HOODIE" | "SWEATSHIRT" | "SHORTS" | "PANTS" => {
   if (tags.includes("hoodie")) {
@@ -251,21 +255,37 @@ export const productService = {
       throw new AppError("CONFLICT", "Продукт с таким slug уже существует");
     }
 
-    const created = await productRepository.createProduct({
+    const normalizedName = sanitizeText(payload.name);
+    const images = sanitizeProductImages(payload.images);
+    const product = await productRepository.createAdminProductBundle({
       brand: sanitizeText(payload.brand),
-      name: sanitizeText(payload.name),
+      name: normalizedName,
       slug: payload.slug,
       description: sanitizeText(payload.description),
       shortDescription: payload.shortDescription ? sanitizeText(payload.shortDescription) : undefined,
-      category: { connect: { id: payload.categoryId } },
+      categoryId: payload.categoryId,
       basePriceCents: payload.basePriceCents,
       currency: payload.currency,
       tags: payload.tags.map((tag) => sanitizeText(tag)),
-      status: ProductStatus.ACTIVE
+      images:
+        images && images.length > 0
+          ? images
+          : [
+              {
+                url: DEFAULT_ADMIN_PRODUCT_IMAGE,
+                alt: `${normalizedName} placeholder`
+              }
+            ],
+      defaultVariant: {
+        name: "Default / OS",
+        sku: buildDefaultVariantSku(payload.slug),
+        color: "Default",
+        size: "OS",
+        priceCents: payload.basePriceCents,
+        currency: payload.currency,
+        quantity: 10
+      }
     });
-
-    const images = sanitizeProductImages(payload.images);
-    const product = images ? await productRepository.replaceProductImages(created.id, images) : created;
 
     invalidateCatalogCache();
     invalidateProductCache(product.slug);

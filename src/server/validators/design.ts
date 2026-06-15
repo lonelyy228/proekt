@@ -30,6 +30,7 @@ const imageSourceSchema = z
   }, "Expected an http(s), png data URL, or webp data URL");
 
 const optionalFiniteNumberSchema = z.number().finite().optional();
+const nullablePaintSchema = z.union([z.string().max(128), z.record(z.string(), z.unknown()), z.null()]).optional();
 
 const designObjectSchema = z
   .object({
@@ -41,8 +42,8 @@ const designObjectSchema = z
     scaleX: z.number().positive().finite().optional(),
     scaleY: z.number().positive().finite().optional(),
     angle: optionalFiniteNumberSchema,
-    fill: z.union([z.string().max(128), z.record(z.string(), z.unknown())]).optional(),
-    stroke: z.union([z.string().max(128), z.record(z.string(), z.unknown())]).optional(),
+    fill: nullablePaintSchema,
+    stroke: nullablePaintSchema,
     text: z.string().max(500).optional(),
     src: imageSourceSchema.optional()
   })

@@ -39,6 +39,7 @@ describe("designSchema", () => {
             top: 300,
             text: "RSH custom",
             fill: "#111111",
+            stroke: null,
             fontFamily: "Space Grotesk"
           },
           {

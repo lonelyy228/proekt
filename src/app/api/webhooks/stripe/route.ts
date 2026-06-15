@@ -7,6 +7,13 @@ import { captureServerError, captureServerMessage } from "@/server/utils/sentry"
 
 export async function POST(request: NextRequest): Promise<Response> {
   const requestId = getRequestId();
+
+  if (env.PAYMENT_PROVIDER !== "stripe") {
+    const response = NextResponse.json({ error: "Stripe webhook endpoint is disabled", requestId }, { status: 503 });
+    response.headers.set("x-request-id", requestId);
+    return response;
+  }
+
   const signature = request.headers.get("stripe-signature");
 
   if (!signature) {

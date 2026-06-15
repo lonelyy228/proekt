@@ -6,6 +6,28 @@ type ProductImageInput = {
   alt: string;
 };
 
+type AdminProductBundleInput = {
+  brand: string;
+  name: string;
+  slug: string;
+  description: string;
+  shortDescription?: string;
+  categoryId: string;
+  basePriceCents: number;
+  currency: string;
+  tags: string[];
+  images: ProductImageInput[];
+  defaultVariant: {
+    name: string;
+    sku: string;
+    color: string;
+    size: string;
+    priceCents: number;
+    currency: string;
+    quantity: number;
+  };
+};
+
 const productImageSelect = {
   id: true,
   url: true,
@@ -106,6 +128,63 @@ export const productRepository = {
     }),
 
   createProduct: (data: Prisma.ProductCreateInput) => prisma.product.create({ data }),
+
+  createAdminProductBundle: (input: AdminProductBundleInput) =>
+    prisma.$transaction(async (tx) => {
+      const product = await tx.product.create({
+        data: {
+          brand: input.brand,
+          name: input.name,
+          slug: input.slug,
+          description: input.description,
+          shortDescription: input.shortDescription,
+          category: { connect: { id: input.categoryId } },
+          basePriceCents: input.basePriceCents,
+          currency: input.currency,
+          tags: input.tags,
+          status: ProductStatus.ACTIVE
+        }
+      });
+
+      const variant = await tx.productVariant.create({
+        data: {
+          productId: product.id,
+          name: input.defaultVariant.name,
+          sku: input.defaultVariant.sku,
+          color: input.defaultVariant.color,
+          size: input.defaultVariant.size,
+          priceCents: input.defaultVariant.priceCents,
+          currency: input.defaultVariant.currency,
+          isDefault: true
+        }
+      });
+
+      await tx.inventoryItem.create({
+        data: {
+          productId: product.id,
+          variantId: variant.id,
+          quantity: input.defaultVariant.quantity
+        }
+      });
+
+      if (input.images.length > 0) {
+        await tx.productImage.createMany({
+          data: input.images.slice(0, 3).map((image, index) => ({
+            productId: product.id,
+            url: image.url,
+            alt: image.alt,
+            width: 1200,
+            height: 1200,
+            sortOrder: index
+          }))
+        });
+      }
+
+      return tx.product.findUniqueOrThrow({
+        where: { id: product.id },
+        include: adminProductInclude
+      });
+    }),
 
   replaceProductImages: (productId: string, images: ProductImageInput[]) =>
     prisma.$transaction(async (tx) => {

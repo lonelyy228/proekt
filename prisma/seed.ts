@@ -28,6 +28,10 @@ type ProductSeed = {
 
 const prisma = new PrismaClient();
 const maxProductImages = 3;
+const placeholderProductImage: ProductSeedImage = {
+  url: "/product-images/catalog-placeholder.svg",
+  alt: "Каталожный placeholder до загрузки продуктового фото"
+};
 const legacySlugs = [
   "rsh-archive-tee-01",
   "rsh-monogram-hoodie-02",
@@ -43,7 +47,28 @@ const legacySlugs = [
   "rsh-basics-blank-pants-05"
 ];
 
-const productSeeds: ProductSeed[] = [
+type GeneratedBrandItemTemplate = {
+  slugTail: string;
+  title: string;
+  shortDescription: string;
+  descriptor: string;
+  tags: string[];
+  color: string;
+  size: string;
+  priceCents: number;
+  skuTail: string;
+};
+
+type GeneratedBrandCatalogConfig = {
+  brand: string;
+  brandLabel: string;
+  slugPrefix: string;
+  skuPrefix: string;
+  tone: string;
+  items: GeneratedBrandItemTemplate[];
+};
+
+const coreProductSeeds: ProductSeed[] = [
   {
     slug: "rsh-adidas-essential-tee-01",
     brand: "ADIDAS",
@@ -344,6 +369,790 @@ const productSeeds: ProductSeed[] = [
   }
 ];
 
+const generatedBrandCatalogConfigs: GeneratedBrandCatalogConfig[] = [
+  {
+    brand: "ADIDAS",
+    brandLabel: "Adidas",
+    slugPrefix: "adidas",
+    skuPrefix: "ADI",
+    tone: "архивной sportswear-эстетикой и чистым городским силуэтом",
+    items: [
+      {
+        slugTail: "archive-zip-hoodie-15",
+        title: "Archive Zip Hoodie",
+        shortDescription: "Zip-худи Adidas в архивном sportswear-настроении",
+        descriptor: "плотный трикотаж, спокойная посадка и слой на каждый день",
+        tags: ["hoodie", "zip", "adidas", "sportswear"],
+        color: "Black",
+        size: "L",
+        priceCents: 11900,
+        skuTail: "ZIP-BLK-L"
+      },
+      {
+        slugTail: "terrace-track-pant-16",
+        title: "Terrace Track Pant",
+        shortDescription: "Track-брюки Adidas для расслабленного city-fit",
+        descriptor: "лёгкая динамика, прямой крой и комфортный повседневный ритм",
+        tags: ["pants", "track", "adidas", "terrace"],
+        color: "Navy",
+        size: "M",
+        priceCents: 8900,
+        skuTail: "TRK-NVY-M"
+      },
+      {
+        slugTail: "essential-crewneck-17",
+        title: "Essential Crewneck",
+        shortDescription: "Базовый crewneck Adidas для ежедневной ротации",
+        descriptor: "чистая форма, мягкая фактура и универсальный mid-layer",
+        tags: ["crewneck", "adidas", "basic", "everyday"],
+        color: "Grey",
+        size: "M",
+        priceCents: 7900,
+        skuTail: "CRW-GRY-M"
+      },
+      {
+        slugTail: "training-longsleeve-18",
+        title: "Training Longsleeve",
+        shortDescription: "Лонгслив Adidas для layering и лёгких сетов",
+        descriptor: "дышащая база под ветровку, жилет или самостоятельный городской образ",
+        tags: ["longsleeve", "adidas", "layering", "training"],
+        color: "White",
+        size: "L",
+        priceCents: 6200,
+        skuTail: "LNG-WHT-L"
+      },
+      {
+        slugTail: "utility-wind-vest-19",
+        title: "Utility Wind Vest",
+        shortDescription: "Лёгкий жилет Adidas для межсезонного слоя",
+        descriptor: "утилитарная подача без перегруза и удобный верхний слой на прохладный вечер",
+        tags: ["vest", "adidas", "utility", "outerwear"],
+        color: "Olive",
+        size: "L",
+        priceCents: 9900,
+        skuTail: "VST-OLV-L"
+      },
+      {
+        slugTail: "weekend-shorts-20",
+        title: "Weekend Shorts",
+        shortDescription: "Свободные шорты Adidas для повседневного гардероба",
+        descriptor: "комфортная длина, relaxed-посадка и простая связка с футболками и худи",
+        tags: ["shorts", "adidas", "weekend", "casual"],
+        color: "Sand",
+        size: "M",
+        priceCents: 5900,
+        skuTail: "SRT-SND-M"
+      }
+    ]
+  },
+  {
+    brand: "NIKE",
+    brandLabel: "Nike",
+    slugPrefix: "nike",
+    skuPrefix: "NKE",
+    tone: "мягким athletic lifestyle-подходом и спокойной everyday-функциональностью",
+    items: [
+      {
+        slugTail: "club-zip-hoodie-21",
+        title: "Club Zip Hoodie",
+        shortDescription: "Zip-худи Nike Club для базы на каждый день",
+        descriptor: "мягкий флис, чистая линия плеча и удобный слой для города",
+        tags: ["hoodie", "nike", "zip", "club"],
+        color: "Grey",
+        size: "L",
+        priceCents: 12500,
+        skuTail: "ZIP-GRY-L"
+      },
+      {
+        slugTail: "tech-track-pant-22",
+        title: "Tech Track Pant",
+        shortDescription: "Track-брюки Nike с акцентом на комфорт",
+        descriptor: "гибкая посадка, повседневная пластика и easy-to-style силуэт",
+        tags: ["pants", "nike", "track", "tech"],
+        color: "Black",
+        size: "M",
+        priceCents: 10400,
+        skuTail: "TRK-BLK-M"
+      },
+      {
+        slugTail: "solo-crew-23",
+        title: "Solo Crew",
+        shortDescription: "Минималистичный свитшот Nike в чистом силуэте",
+        descriptor: "ровный объём, мягкая база и универсальность под denim или cargo",
+        tags: ["crewneck", "nike", "minimal", "everyday"],
+        color: "Bone",
+        size: "M",
+        priceCents: 9500,
+        skuTail: "CRW-BON-M"
+      },
+      {
+        slugTail: "running-longsleeve-24",
+        title: "Running Longsleeve",
+        shortDescription: "Лонгслив Nike для легкого active-layering",
+        descriptor: "тонкий комфортный слой для прогулок, поездок и тренировочного настроения",
+        tags: ["longsleeve", "nike", "running", "layering"],
+        color: "White",
+        size: "L",
+        priceCents: 6800,
+        skuTail: "LNG-WHT-L"
+      },
+      {
+        slugTail: "utility-vest-25",
+        title: "Utility Vest",
+        shortDescription: "Утилитарный жилет Nike для межсезонья",
+        descriptor: "спокойная техничность и практичный верхний слой поверх худи или лонгслива",
+        tags: ["vest", "nike", "utility", "outerwear"],
+        color: "Olive",
+        size: "L",
+        priceCents: 11800,
+        skuTail: "VST-OLV-L"
+      },
+      {
+        slugTail: "court-shorts-26",
+        title: "Court Shorts",
+        shortDescription: "Шорты Nike для ежедневного summer-fit",
+        descriptor: "лёгкая посадка, чистая длина и универсальная спортивная база",
+        tags: ["shorts", "nike", "court", "casual"],
+        color: "Black",
+        size: "M",
+        priceCents: 6100,
+        skuTail: "SRT-BLK-M"
+      }
+    ]
+  },
+  {
+    brand: "PUMA",
+    brandLabel: "Puma",
+    slugPrefix: "puma",
+    skuPrefix: "PMA",
+    tone: "чёткой ретро-динамикой и собранным sportswear-силуэтом",
+    items: [
+      {
+        slugTail: "motorsport-zip-hoodie-27",
+        title: "Motorsport Zip Hoodie",
+        shortDescription: "Zip-худи Puma с ретро-спортивным характером",
+        descriptor: "контрастная подача, аккуратная форма и городской спортивный вайб",
+        tags: ["hoodie", "puma", "zip", "motorsport"],
+        color: "Black",
+        size: "L",
+        priceCents: 10900,
+        skuTail: "ZIP-BLK-L"
+      },
+      {
+        slugTail: "stadium-track-pant-28",
+        title: "Stadium Track Pant",
+        shortDescription: "Track-брюки Puma для спокойного street-sportswear",
+        descriptor: "подтянутая линия, удобство в движении и everyday-функциональность",
+        tags: ["pants", "puma", "track", "stadium"],
+        color: "Navy",
+        size: "M",
+        priceCents: 8400,
+        skuTail: "TRK-NVY-M"
+      },
+      {
+        slugTail: "team-crewneck-29",
+        title: "Team Crewneck",
+        shortDescription: "Crewneck Puma в винтажно-командной эстетике",
+        descriptor: "мягкий объём и понятная база для джинсов, шорт или карго",
+        tags: ["crewneck", "puma", "team", "everyday"],
+        color: "Grey",
+        size: "M",
+        priceCents: 7600,
+        skuTail: "CRW-GRY-M"
+      },
+      {
+        slugTail: "active-longsleeve-30",
+        title: "Active Longsleeve",
+        shortDescription: "Лонгслив Puma для layering и легких сетов",
+        descriptor: "гибкая база на каждый день с чистым визуальным ритмом",
+        tags: ["longsleeve", "puma", "active", "layering"],
+        color: "White",
+        size: "L",
+        priceCents: 5900,
+        skuTail: "LNG-WHT-L"
+      },
+      {
+        slugTail: "packable-vest-31",
+        title: "Packable Vest",
+        shortDescription: "Компактный жилет Puma для межсезонных образов",
+        descriptor: "лёгкий верхний слой с утилитарной подачей без перегруза",
+        tags: ["vest", "puma", "packable", "outerwear"],
+        color: "Olive",
+        size: "L",
+        priceCents: 9200,
+        skuTail: "VST-OLV-L"
+      },
+      {
+        slugTail: "weekend-shorts-32",
+        title: "Weekend Shorts",
+        shortDescription: "Шорты Puma для повседневной спортивной базы",
+        descriptor: "лёгкая посадка, свободное движение и простая интеграция в summer-fit",
+        tags: ["shorts", "puma", "weekend", "casual"],
+        color: "Black",
+        size: "M",
+        priceCents: 5600,
+        skuTail: "SRT-BLK-M"
+      }
+    ]
+  },
+  {
+    brand: "TIMBERLAND",
+    brandLabel: "Timberland",
+    slugPrefix: "timberland",
+    skuPrefix: "TMB",
+    tone: "outdoor-настроением, плотными материалами и rugged-городской подачей",
+    items: [
+      {
+        slugTail: "outdoor-hoodie-33",
+        title: "Outdoor Hoodie",
+        shortDescription: "Плотное худи Timberland для холодного сезона",
+        descriptor: "устойчивый объём, практичная база и вещь под грубый повседневный сет",
+        tags: ["hoodie", "timberland", "outdoor", "rugged"],
+        color: "Brown",
+        size: "L",
+        priceCents: 12900,
+        skuTail: "HOOD-BRN-L"
+      },
+      {
+        slugTail: "field-cargo-pant-34",
+        title: "Field Cargo Pant",
+        shortDescription: "Карго Timberland в outdoor-городской эстетике",
+        descriptor: "утилитарный силуэт, плотная ткань и удобство под ботинки или кроссовки",
+        tags: ["pants", "timberland", "cargo", "field"],
+        color: "Olive",
+        size: "32",
+        priceCents: 14900,
+        skuTail: "CRG-OLV-32"
+      },
+      {
+        slugTail: "heritage-crewneck-35",
+        title: "Heritage Crewneck",
+        shortDescription: "Свитшот Timberland в heritage-подаче",
+        descriptor: "ровная форма, плотный трикотаж и спокойная рабочая база",
+        tags: ["crewneck", "timberland", "heritage", "everyday"],
+        color: "Sand",
+        size: "M",
+        priceCents: 9900,
+        skuTail: "CRW-SND-M"
+      },
+      {
+        slugTail: "waffle-longsleeve-36",
+        title: "Waffle Longsleeve",
+        shortDescription: "Фактурный лонгслив Timberland для layering",
+        descriptor: "тёплая повседневная база с выраженной текстурой и outdoor-ноткой",
+        tags: ["longsleeve", "timberland", "waffle", "layering"],
+        color: "Ecru",
+        size: "L",
+        priceCents: 7900,
+        skuTail: "LNG-ECR-L"
+      },
+      {
+        slugTail: "trail-vest-37",
+        title: "Trail Vest",
+        shortDescription: "Жилет Timberland как рабочий верхний слой",
+        descriptor: "плотная утилитарная подача и практичность для межсезонного гардероба",
+        tags: ["vest", "timberland", "trail", "outerwear"],
+        color: "Black",
+        size: "L",
+        priceCents: 15900,
+        skuTail: "VST-BLK-L"
+      },
+      {
+        slugTail: "carpenter-shorts-38",
+        title: "Carpenter Shorts",
+        shortDescription: "Шорты Timberland в workwear-настроении",
+        descriptor: "грубоватая фактура, свободная посадка и расслабленный summer rugged-fit",
+        tags: ["shorts", "timberland", "carpenter", "workwear"],
+        color: "Khaki",
+        size: "32",
+        priceCents: 9500,
+        skuTail: "SRT-KHK-32"
+      }
+    ]
+  },
+  {
+    brand: "MAISON MARGIELA",
+    brandLabel: "Maison Margiela",
+    slugPrefix: "margiela",
+    skuPrefix: "MMG",
+    tone: "тихой премиальностью, деконструированным ощущением и мягкой минималистичной линией",
+    items: [
+      {
+        slugTail: "replica-hoodie-39",
+        title: "Replica Hoodie",
+        shortDescription: "Премиальное худи Margiela в спокойном объёме",
+        descriptor: "чистый силуэт, выверенная пластика ткани и сдержанный luxury-контекст",
+        tags: ["hoodie", "margiela", "premium", "minimal"],
+        color: "Stone",
+        size: "L",
+        priceCents: 47900,
+        skuTail: "HOOD-STN-L"
+      },
+      {
+        slugTail: "atelier-trouser-40",
+        title: "Atelier Trouser",
+        shortDescription: "Брюки Margiela для refined smart-casual гардероба",
+        descriptor: "мягкая линия, спокойный объём и премиальная база под layered-образ",
+        tags: ["pants", "margiela", "atelier", "premium"],
+        color: "Black",
+        size: "48",
+        priceCents: 51900,
+        skuTail: "TRS-BLK-48"
+      },
+      {
+        slugTail: "fourstitch-crewneck-41",
+        title: "Four-Stitch Crewneck",
+        shortDescription: "Crewneck Margiela в тихой luxury-эстетике",
+        descriptor: "мягкий трикотаж, аккуратный объём и спокойное дизайнерское настроение",
+        tags: ["crewneck", "margiela", "luxury", "minimal"],
+        color: "Ecru",
+        size: "M",
+        priceCents: 44900,
+        skuTail: "CRW-ECR-M"
+      },
+      {
+        slugTail: "minimal-longsleeve-42",
+        title: "Minimal Longsleeve",
+        shortDescription: "Лонгслив Margiela как чистая база под layering",
+        descriptor: "тонкий премиальный слой для сдержанных образов без визуального шума",
+        tags: ["longsleeve", "margiela", "minimal", "layering"],
+        color: "White",
+        size: "L",
+        priceCents: 28900,
+        skuTail: "LNG-WHT-L"
+      },
+      {
+        slugTail: "utility-gilet-43",
+        title: "Utility Gilet",
+        shortDescription: "Жилет Margiela с утилитарным luxury-настроением",
+        descriptor: "деконструированная лёгкость и верхний слой для продуманного smart-layering",
+        tags: ["vest", "margiela", "gilet", "premium"],
+        color: "Charcoal",
+        size: "L",
+        priceCents: 53900,
+        skuTail: "VST-CHR-L"
+      },
+      {
+        slugTail: "relaxed-shorts-44",
+        title: "Relaxed Shorts",
+        shortDescription: "Шорты Margiela для сдержанного summer luxury-fit",
+        descriptor: "ровная длина, чистая линия и спокойный премиальный ритм",
+        tags: ["shorts", "margiela", "relaxed", "premium"],
+        color: "Sand",
+        size: "48",
+        priceCents: 32900,
+        skuTail: "SRT-SND-48"
+      }
+    ]
+  },
+  {
+    brand: "GUCCI",
+    brandLabel: "Gucci",
+    slugPrefix: "gucci",
+    skuPrefix: "GCI",
+    tone: "мягкой luxury-подачей, статусной базой и заметной fashion-энергией без перегруза",
+    items: [
+      {
+        slugTail: "knit-zip-hoodie-45",
+        title: "Knit Zip Hoodie",
+        shortDescription: "Вязаное zip-худи Gucci для luxury casual",
+        descriptor: "мягкая фактура, статусный everyday-слой и спокойная fashion-пластика",
+        tags: ["hoodie", "gucci", "luxury", "knit"],
+        color: "Cream",
+        size: "L",
+        priceCents: 55900,
+        skuTail: "ZIP-CRM-L"
+      },
+      {
+        slugTail: "web-track-pant-46",
+        title: "Web Track Pant",
+        shortDescription: "Track-брюки Gucci в premium sportswear-ключе",
+        descriptor: "легкая динамика, мягкий люксовый контекст и комфортный relaxed-fit",
+        tags: ["pants", "gucci", "track", "luxury"],
+        color: "Navy",
+        size: "48",
+        priceCents: 52900,
+        skuTail: "TRK-NVY-48"
+      },
+      {
+        slugTail: "script-crewneck-47",
+        title: "Script Crewneck",
+        shortDescription: "Свитшот Gucci как статусная повседневная база",
+        descriptor: "ровный объём и premium-силуэт, который легко собирать с денимом и лоферами",
+        tags: ["crewneck", "gucci", "luxury", "everyday"],
+        color: "Camel",
+        size: "M",
+        priceCents: 48900,
+        skuTail: "CRW-CML-M"
+      },
+      {
+        slugTail: "lightweight-longsleeve-48",
+        title: "Lightweight Longsleeve",
+        shortDescription: "Лонгслив Gucci для layering в smart-casual",
+        descriptor: "тонкая премиальная база с чистым визуальным ритмом и мягким падением ткани",
+        tags: ["longsleeve", "gucci", "smart-casual", "premium"],
+        color: "White",
+        size: "L",
+        priceCents: 31900,
+        skuTail: "LNG-WHT-L"
+      },
+      {
+        slugTail: "monogram-vest-49",
+        title: "Monogram Vest",
+        shortDescription: "Жилет Gucci для выразительного top-layer",
+        descriptor: "сдержанный luxe-акцент и верхний слой для собранного городского образа",
+        tags: ["vest", "gucci", "monogram", "luxury"],
+        color: "Brown",
+        size: "L",
+        priceCents: 57900,
+        skuTail: "VST-BRN-L"
+      },
+      {
+        slugTail: "resort-shorts-50",
+        title: "Resort Shorts",
+        shortDescription: "Шорты Gucci для летнего luxury casual",
+        descriptor: "чистая длина, лёгкая ткань и расслабленная премиальная база",
+        tags: ["shorts", "gucci", "resort", "luxury"],
+        color: "Beige",
+        size: "48",
+        priceCents: 35900,
+        skuTail: "SRT-BGE-48"
+      }
+    ]
+  },
+  {
+    brand: "BALENCIAGA",
+    brandLabel: "Balenciaga",
+    slugPrefix: "balenciaga",
+    skuPrefix: "BLC",
+    tone: "объёмным силуэтом, тяжёлой фактурой и прямолинейной street-luxury подачей",
+    items: [
+      {
+        slugTail: "layered-zip-hoodie-51",
+        title: "Layered Zip Hoodie",
+        shortDescription: "Объёмное zip-худи Balenciaga в тяжёлом силуэте",
+        descriptor: "выраженный shape, плотный материал и сильная street-luxury форма",
+        tags: ["hoodie", "balenciaga", "oversized", "luxury"],
+        color: "Black",
+        size: "L",
+        priceCents: 77900,
+        skuTail: "ZIP-BLK-L"
+      },
+      {
+        slugTail: "wide-track-pant-52",
+        title: "Wide Track Pant",
+        shortDescription: "Широкие track-брюки Balenciaga для statement-fit",
+        descriptor: "масштабный объём, расслабленная линия и fashion-силуэт без компромиссов",
+        tags: ["pants", "balenciaga", "wide", "fashion"],
+        color: "Charcoal",
+        size: "M",
+        priceCents: 73900,
+        skuTail: "TRK-CHR-M"
+      },
+      {
+        slugTail: "boxy-crewneck-53",
+        title: "Boxy Crewneck",
+        shortDescription: "Boxy crewneck Balenciaga для тяжелого layering",
+        descriptor: "собранный укороченный объём и плотная база под широкий низ",
+        tags: ["crewneck", "balenciaga", "boxy", "luxury"],
+        color: "Grey",
+        size: "M",
+        priceCents: 64900,
+        skuTail: "CRW-GRY-M"
+      },
+      {
+        slugTail: "logo-longsleeve-54",
+        title: "Logo Longsleeve",
+        shortDescription: "Лонгслив Balenciaga как графичная база",
+        descriptor: "тяжёлая посадка и clean-statement вещь для широких городских сетов",
+        tags: ["longsleeve", "balenciaga", "graphic", "street-luxury"],
+        color: "White",
+        size: "L",
+        priceCents: 41900,
+        skuTail: "LNG-WHT-L"
+      },
+      {
+        slugTail: "technical-vest-55",
+        title: "Technical Vest",
+        shortDescription: "Жилет Balenciaga для layered street-luxury",
+        descriptor: "массивная верхняя линия и заметный акцент в монохромном образе",
+        tags: ["vest", "balenciaga", "technical", "luxury"],
+        color: "Black",
+        size: "L",
+        priceCents: 82900,
+        skuTail: "VST-BLK-L"
+      },
+      {
+        slugTail: "baggy-shorts-56",
+        title: "Baggy Shorts",
+        shortDescription: "Шорты Balenciaga в wide summer silhouette",
+        descriptor: "объёмный крой и fashion-пропорции под массивную обувь или high-top sneakers",
+        tags: ["shorts", "balenciaga", "baggy", "fashion"],
+        color: "Black",
+        size: "M",
+        priceCents: 45900,
+        skuTail: "SRT-BLK-M"
+      }
+    ]
+  },
+  {
+    brand: "OFF-WHITE",
+    brandLabel: "Off-White",
+    slugPrefix: "offwhite",
+    skuPrefix: "OFW",
+    tone: "графичным streetwear-характером и заметной fashion-энергией",
+    items: [
+      {
+        slugTail: "marker-zip-hoodie-57",
+        title: "Marker Zip Hoodie",
+        shortDescription: "Zip-худи Off-White в графичном streetwear-ключе",
+        descriptor: "ясный визуальный акцент и everyday-база для широкого низа и кроссовок",
+        tags: ["hoodie", "off-white", "graphic", "streetwear"],
+        color: "Black",
+        size: "L",
+        priceCents: 38900,
+        skuTail: "ZIP-BLK-L"
+      },
+      {
+        slugTail: "industrial-track-pant-58",
+        title: "Industrial Track Pant",
+        shortDescription: "Track-брюки Off-White для street-luxury комплекта",
+        descriptor: "повседневная динамика, прямой крой и графичный контекст бренда",
+        tags: ["pants", "off-white", "track", "streetwear"],
+        color: "Olive",
+        size: "M",
+        priceCents: 34900,
+        skuTail: "TRK-OLV-M"
+      },
+      {
+        slugTail: "arrow-crewneck-59",
+        title: "Arrow Crewneck",
+        shortDescription: "Свитшот Off-White как базовый streetwear-слой",
+        descriptor: "чистая форма, комфортный объём и предмет для ежедневной ротации",
+        tags: ["crewneck", "off-white", "streetwear", "everyday"],
+        color: "Grey",
+        size: "M",
+        priceCents: 32900,
+        skuTail: "CRW-GRY-M"
+      },
+      {
+        slugTail: "graphic-longsleeve-60",
+        title: "Graphic Longsleeve",
+        shortDescription: "Лонгслив Off-White с уличным графичным настроением",
+        descriptor: "лёгкая база для layering, которая не теряет характер без сложного образа",
+        tags: ["longsleeve", "off-white", "graphic", "layering"],
+        color: "White",
+        size: "L",
+        priceCents: 21900,
+        skuTail: "LNG-WHT-L"
+      },
+      {
+        slugTail: "tactical-vest-61",
+        title: "Tactical Vest",
+        shortDescription: "Жилет Off-White для layered street-fit",
+        descriptor: "утилитарный верхний слой с выраженным streetwear-ритмом",
+        tags: ["vest", "off-white", "tactical", "streetwear"],
+        color: "Black",
+        size: "L",
+        priceCents: 39900,
+        skuTail: "VST-BLK-L"
+      },
+      {
+        slugTail: "cargo-shorts-62",
+        title: "Cargo Shorts",
+        shortDescription: "Шорты Off-White для функционального summer streetwear",
+        descriptor: "свободная посадка и лёгкая утилитарность без потери fashion-акцента",
+        tags: ["shorts", "off-white", "cargo", "streetwear"],
+        color: "Khaki",
+        size: "M",
+        priceCents: 25900,
+        skuTail: "SRT-KHK-M"
+      }
+    ]
+  },
+  {
+    brand: "STONE ISLAND",
+    brandLabel: "Stone Island",
+    slugPrefix: "stoneisland",
+    skuPrefix: "STI",
+    tone: "техническим характером, утилитарной сдержанностью и premium functional wear-настроением",
+    items: [
+      {
+        slugTail: "garment-dye-hoodie-63",
+        title: "Garment Dye Hoodie",
+        shortDescription: "Худи Stone Island в техническом everyday-ключе",
+        descriptor: "плотный материал, чистый utilitarian-силуэт и спокойный функциональный стиль",
+        tags: ["hoodie", "stone-island", "techwear", "premium"],
+        color: "Olive",
+        size: "L",
+        priceCents: 42900,
+        skuTail: "HOOD-OLV-L"
+      },
+      {
+        slugTail: "cargo-pant-64",
+        title: "Cargo Pant",
+        shortDescription: "Карго Stone Island для функционального city-fit",
+        descriptor: "утилитарная база, плотная посадка и премиальное techwear-настроение",
+        tags: ["pants", "stone-island", "cargo", "techwear"],
+        color: "Black",
+        size: "32",
+        priceCents: 45900,
+        skuTail: "CRG-BLK-32"
+      },
+      {
+        slugTail: "compass-crewneck-65",
+        title: "Compass Crewneck",
+        shortDescription: "Crewneck Stone Island как premium mid-layer",
+        descriptor: "сдержанный силуэт и предмет для функционального layered-гардероба",
+        tags: ["crewneck", "stone-island", "premium", "everyday"],
+        color: "Grey",
+        size: "M",
+        priceCents: 36900,
+        skuTail: "CRW-GRY-M"
+      },
+      {
+        slugTail: "jersey-longsleeve-66",
+        title: "Jersey Longsleeve",
+        shortDescription: "Лонгслив Stone Island для техничной базы",
+        descriptor: "спокойная футболочная линия с premium functional wear-ощущением",
+        tags: ["longsleeve", "stone-island", "jersey", "layering"],
+        color: "White",
+        size: "L",
+        priceCents: 24900,
+        skuTail: "LNG-WHT-L"
+      },
+      {
+        slugTail: "microreps-vest-67",
+        title: "Micro Reps Vest",
+        shortDescription: "Жилет Stone Island для межсезонного layering",
+        descriptor: "технический верхний слой с утилитарной аккуратностью и спокойной графикой",
+        tags: ["vest", "stone-island", "techwear", "outerwear"],
+        color: "Charcoal",
+        size: "L",
+        priceCents: 49900,
+        skuTail: "VST-CHR-L"
+      },
+      {
+        slugTail: "nylon-shorts-68",
+        title: "Nylon Shorts",
+        shortDescription: "Шорты Stone Island в utilitarian summer-ключе",
+        descriptor: "лёгкий технический материал и база для продуманного городского лета",
+        tags: ["shorts", "stone-island", "nylon", "techwear"],
+        color: "Olive",
+        size: "M",
+        priceCents: 27900,
+        skuTail: "SRT-OLV-M"
+      }
+    ]
+  },
+  {
+    brand: "NEW BALANCE",
+    brandLabel: "New Balance",
+    slugPrefix: "newbalance",
+    skuPrefix: "NBL",
+    tone: "комфортным athletic lifestyle-настроением и мягкой городской функциональностью",
+    items: [
+      {
+        slugTail: "running-zip-hoodie-69",
+        title: "Running Zip Hoodie",
+        shortDescription: "Zip-худи New Balance для комфортного daily wear",
+        descriptor: "мягкая форма, легкий спортивный контекст и база для города",
+        tags: ["hoodie", "new-balance", "running", "lifestyle"],
+        color: "Grey",
+        size: "L",
+        priceCents: 11900,
+        skuTail: "ZIP-GRY-L"
+      },
+      {
+        slugTail: "tech-jogger-70",
+        title: "Tech Jogger",
+        shortDescription: "Jogger New Balance для relaxed active wardrobe",
+        descriptor: "комфортное движение, чистый everyday-силуэт и понятная база под кроссовки",
+        tags: ["pants", "new-balance", "jogger", "lifestyle"],
+        color: "Black",
+        size: "M",
+        priceCents: 9800,
+        skuTail: "JGR-BLK-M"
+      },
+      {
+        slugTail: "athletics-crewneck-71",
+        title: "Athletics Crewneck",
+        shortDescription: "Crewneck New Balance как спортивная база на каждый день",
+        descriptor: "спокойный объём и мягкий athletic lifestyle-ритм без лишней агрессии",
+        tags: ["crewneck", "new-balance", "athletics", "everyday"],
+        color: "Stone",
+        size: "M",
+        priceCents: 8200,
+        skuTail: "CRW-STN-M"
+      },
+      {
+        slugTail: "active-longsleeve-72",
+        title: "Active Longsleeve",
+        shortDescription: "Лонгслив New Balance для layering и прогулок",
+        descriptor: "лёгкая повседневная база с акцентом на комфорт и движение",
+        tags: ["longsleeve", "new-balance", "active", "layering"],
+        color: "White",
+        size: "L",
+        priceCents: 6400,
+        skuTail: "LNG-WHT-L"
+      },
+      {
+        slugTail: "training-vest-73",
+        title: "Training Vest",
+        shortDescription: "Жилет New Balance для межсезонной спортивной базы",
+        descriptor: "лёгкий слой на прохладную погоду и спокойный utilitarian lifestyle-fit",
+        tags: ["vest", "new-balance", "training", "outerwear"],
+        color: "Navy",
+        size: "L",
+        priceCents: 10400,
+        skuTail: "VST-NVY-L"
+      },
+      {
+        slugTail: "court-shorts-74",
+        title: "Court Shorts",
+        shortDescription: "Шорты New Balance для summer lifestyle образов",
+        descriptor: "простая посадка, лёгкий спортивный характер и everyday-комфорт",
+        tags: ["shorts", "new-balance", "court", "casual"],
+        color: "Sand",
+        size: "M",
+        priceCents: 5700,
+        skuTail: "SRT-SND-M"
+      }
+    ]
+  }
+];
+
+const buildGeneratedBrandProducts = (config: GeneratedBrandCatalogConfig): ProductSeed[] =>
+  config.items.map((item) => {
+    const name = `${config.brandLabel} ${item.title}`;
+
+    return {
+      slug: `rsh-${config.slugPrefix}-${item.slugTail}`,
+      brand: config.brand,
+      name,
+      description: `${name} с акцентом на ${config.tone}: ${item.descriptor}. Позиция добавлена как готовая каталожная карточка, а фото можно заменить позже без изменения slug и SKU.`,
+      shortDescription: item.shortDescription,
+      image: {
+        ...placeholderProductImage,
+        alt: `${name} placeholder`
+      },
+      tags: [...item.tags, "catalog-seed", config.slugPrefix],
+      basePriceCents: item.priceCents,
+      variant: {
+        sku: `RSH-${config.skuPrefix}-${item.skuTail}`,
+        name: `${item.color} / ${item.size}`,
+        color: item.color,
+        size: item.size,
+        priceCents: item.priceCents
+      }
+    };
+  });
+
+const productSeeds: ProductSeed[] = [
+  ...coreProductSeeds,
+  ...generatedBrandCatalogConfigs.flatMap(buildGeneratedBrandProducts)
+];
+
 const getProductImages = (seed: ProductSeed): ProductSeedImage[] => {
   const images = seed.images ?? (seed.image ? [seed.image] : []);
 
@@ -418,7 +1227,8 @@ async function main(): Promise<void> {
         status: ProductStatus.ACTIVE,
         categoryId: seed.categorySlug === "rsh-basics" ? basicsCategory.id : brandsCategory.id,
         basePriceCents: seed.basePriceCents,
-        currency: "USD"
+        currency: "USD",
+        deletedAt: null
       },
       create: {
         brand: seed.brand,
@@ -430,11 +1240,12 @@ async function main(): Promise<void> {
         status: ProductStatus.ACTIVE,
         categoryId: seed.categorySlug === "rsh-basics" ? basicsCategory.id : brandsCategory.id,
         basePriceCents: seed.basePriceCents,
-        currency: "USD"
+        currency: "USD",
+        deletedAt: null
       }
     });
 
-    await prisma.productVariant.upsert({
+    const variant = await prisma.productVariant.upsert({
       where: { sku: seed.variant.sku },
       update: {
         productId: product.id,
@@ -454,6 +1265,21 @@ async function main(): Promise<void> {
         priceCents: seed.variant.priceCents,
         currency: "USD",
         isDefault: true
+      }
+    });
+
+    await prisma.inventoryItem.upsert({
+      where: { variantId: variant.id },
+      update: {
+        productId: product.id,
+        quantity: 10,
+        reservedQuantity: 0
+      },
+      create: {
+        productId: product.id,
+        variantId: variant.id,
+        quantity: 10,
+        reservedQuantity: 0
       }
     });
 

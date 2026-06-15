@@ -1008,6 +1008,10 @@ export const AdminProductsManager = (): JSX.Element => {
 
       <div className="rounded-xl border bg-card p-4">
         <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Создать товар</h3>
+        <p className="mb-3 text-xs text-muted-foreground">
+          Новый товар теперь создаётся сразу с дефолтным вариантом `Default / OS` и стартовым остатком `10`.
+          Если фото пока нет, оставьте блок изображений пустым: система подставит placeholder.
+        </p>
         <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
           <input
             className="rounded-md border bg-background px-3 py-2 text-sm"
@@ -1075,7 +1079,7 @@ export const AdminProductsManager = (): JSX.Element => {
             <div>
               <p className="text-sm font-medium">Фото товара</p>
               <p className="text-xs text-muted-foreground">
-                До 3 изображений. Используй путь /product-images/file.jpg или https:// URL.
+                До 3 изображений. Используй путь /product-images/file.jpg или https:// URL. Если оставить пусто, будет placeholder.
               </p>
             </div>
             <div className="grid gap-3 lg:grid-cols-3">

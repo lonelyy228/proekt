@@ -13,11 +13,9 @@ const REQUIRED_ENV = [
   "REFRESH_TOKEN_PEPPER",
   "ACCESS_TOKEN_TTL_SECONDS",
   "REFRESH_TOKEN_TTL_DAYS",
-  "STRIPE_SECRET_KEY",
-  "STRIPE_WEBHOOK_SECRET",
+  "PAYMENT_PROVIDER",
   "STRIPE_PRICE_CURRENCY",
-  "UPLOADTHING_TOKEN",
-  "UPLOADTHING_APP_ID"
+  "UPLOAD_PROVIDER"
 ];
 
 const OPTIONAL_ENV = [
@@ -116,12 +114,37 @@ if ((env.REFRESH_TOKEN_PEPPER ?? "").length < 16) {
   addIssue("REFRESH_TOKEN_PEPPER must be at least 16 characters");
 }
 
-if (!/^sk_live_/.test(env.STRIPE_SECRET_KEY ?? "")) {
-  addIssue("STRIPE_SECRET_KEY must be a live Stripe secret key (sk_live_...) for production");
+const paymentProvider = env.PAYMENT_PROVIDER ?? "stripe";
+if (!["stripe", "manual", "cloudpayments"].includes(paymentProvider)) {
+  addIssue("PAYMENT_PROVIDER must be one of: stripe, manual, cloudpayments");
 }
 
-if (!/^whsec_/.test(env.STRIPE_WEBHOOK_SECRET ?? "")) {
-  addIssue("STRIPE_WEBHOOK_SECRET must start with whsec_");
+if (paymentProvider === "stripe") {
+  if (!(env.STRIPE_SECRET_KEY ?? "").trim()) {
+    addIssue("STRIPE_SECRET_KEY is required when PAYMENT_PROVIDER=stripe");
+  }
+
+  if (!(env.STRIPE_WEBHOOK_SECRET ?? "").trim()) {
+    addIssue("STRIPE_WEBHOOK_SECRET is required when PAYMENT_PROVIDER=stripe");
+  }
+
+  if (!/^sk_live_/.test(env.STRIPE_SECRET_KEY ?? "")) {
+    addIssue("STRIPE_SECRET_KEY must be a live Stripe secret key (sk_live_...) when PAYMENT_PROVIDER=stripe");
+  }
+
+  if (!/^whsec_/.test(env.STRIPE_WEBHOOK_SECRET ?? "")) {
+    addIssue("STRIPE_WEBHOOK_SECRET must start with whsec_ when PAYMENT_PROVIDER=stripe");
+  }
+}
+
+if (paymentProvider === "cloudpayments") {
+  if (!(env.CLOUDPAYMENTS_PUBLIC_ID ?? "").trim()) {
+    addIssue("CLOUDPAYMENTS_PUBLIC_ID is required when PAYMENT_PROVIDER=cloudpayments");
+  }
+
+  if (!(env.CLOUDPAYMENTS_API_SECRET ?? "").trim()) {
+    addIssue("CLOUDPAYMENTS_API_SECRET is required when PAYMENT_PROVIDER=cloudpayments");
+  }
 }
 
 for (const key of ["DATABASE_URL", "DIRECT_URL"]) {
@@ -138,6 +161,21 @@ for (const key of ["DATABASE_URL", "DIRECT_URL"]) {
 const currency = env.STRIPE_PRICE_CURRENCY ?? "";
 if (!/^[a-z]{3}$/.test(currency)) {
   addIssue("STRIPE_PRICE_CURRENCY must be a 3-letter lowercase ISO currency, for example rub");
+}
+
+const uploadProvider = env.UPLOAD_PROVIDER ?? "uploadthing";
+if (!["uploadthing", "local"].includes(uploadProvider)) {
+  addIssue("UPLOAD_PROVIDER must be one of: uploadthing, local");
+}
+
+if (uploadProvider === "uploadthing") {
+  if (!(env.UPLOADTHING_TOKEN ?? "").trim()) {
+    addIssue("UPLOADTHING_TOKEN is required when UPLOAD_PROVIDER=uploadthing");
+  }
+
+  if (!(env.UPLOADTHING_APP_ID ?? "").trim()) {
+    addIssue("UPLOADTHING_APP_ID is required when UPLOAD_PROVIDER=uploadthing");
+  }
 }
 
 for (const key of OPTIONAL_ENV) {

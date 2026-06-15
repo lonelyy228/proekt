@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+APP_DIR="/var/www/rsh"
+
+cd "$APP_DIR"
+
+echo "[deploy] installing dependencies"
+npm ci
+
+echo "[deploy] validating environment"
+node scripts/deploy-env-check.mjs .env.production
+
+echo "[deploy] applying prisma migrations"
+npm run prisma:deploy
+
+echo "[deploy] building app"
+npm run build
+
+echo "[deploy] restarting service"
+sudo systemctl restart rsh
+
+echo "[deploy] checking service status"
+sudo systemctl --no-pager --full status rsh

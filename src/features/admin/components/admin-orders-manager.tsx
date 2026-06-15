@@ -75,7 +75,7 @@ type AdminOrderDetails = {
   }>;
   payments: Array<{
     id: string;
-    provider: "STRIPE";
+    provider: "STRIPE" | "MANUAL" | "CLOUDPAYMENTS";
     status: "REQUIRES_ACTION" | "SUCCEEDED" | "FAILED" | "REFUNDED";
     amountCents: number;
     currency: string;

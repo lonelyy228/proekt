@@ -42,6 +42,8 @@ enum PaymentStatus {
 
 enum PaymentProvider {
   STRIPE
+  MANUAL
+  CLOUDPAYMENTS
 }
 
 enum GarmentType {

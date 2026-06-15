@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 1200" fill="none">
+  <rect width="1200" height="1200" fill="#f3f1ec"/>
+  <rect x="120" y="120" width="960" height="960" rx="48" fill="#f7f5f0" stroke="#d7d0c6" stroke-width="12"/>
+  <path d="M360 780V420h480v360" stroke="#2b2b2b" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M470 420c18-84 81-126 130-126s112 42 130 126" stroke="#2b2b2b" stroke-width="18" stroke-linecap="round"/>
+  <path d="M360 468l110 108" stroke="#2b2b2b" stroke-width="18" stroke-linecap="round"/>
+  <path d="M840 468L730 576" stroke="#2b2b2b" stroke-width="18" stroke-linecap="round"/>
+  <path d="M500 900h200" stroke="#2b2b2b" stroke-width="18" stroke-linecap="round"/>
+  <text x="600" y="1020" text-anchor="middle" fill="#5c564f" font-family="Arial, Helvetica, sans-serif" font-size="42" letter-spacing="10">
+    RSH PLACEHOLDER
+  </text>
+</svg>
