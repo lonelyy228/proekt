@@ -810,6 +810,22 @@ const centerObjectInPrintArea = (object: FabricObject, printArea: PrintArea): vo
   object.setCoords();
 };
 
+const fitTextboxToPrintArea = (textbox: Textbox, printArea: PrintArea): void => {
+  const rawTextWidth =
+    typeof (textbox as Textbox & { calcTextWidth?: () => number }).calcTextWidth === "function"
+      ? Math.ceil((textbox as Textbox & { calcTextWidth: () => number }).calcTextWidth())
+      : Math.ceil(textbox.width ?? 0);
+
+  const targetWidth = clamp(rawTextWidth + 24, 120, Math.max(120, printArea.width - 16));
+  textbox.set({ width: targetWidth });
+
+  if (typeof textbox.initDimensions === "function") {
+    textbox.initDimensions();
+  }
+
+  textbox.setCoords();
+};
+
 const fileToDataUrl = (file: File): Promise<string> =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -1347,7 +1363,7 @@ export const EditorCanvas = (): JSX.Element => {
       new Textbox(textValue.trim() || "RSH custom", {
       left: activePrintArea.left + 18,
       top: activePrintArea.top + 18,
-      width: Math.min(240, Math.round(activePrintArea.width * 0.56)),
+      width: Math.min(180, Math.round(activePrintArea.width * 0.42)),
       fontSize: textSize,
       fill: textColor,
       fontFamily,
@@ -1355,6 +1371,7 @@ export const EditorCanvas = (): JSX.Element => {
       })
     );
 
+    fitTextboxToPrintArea(text, activePrintArea);
     centerObjectInPrintArea(text, activePrintArea);
     canvas.add(text);
     canvas.setActiveObject(text);
@@ -1374,6 +1391,7 @@ export const EditorCanvas = (): JSX.Element => {
     }
 
     updater(selectedTextbox);
+    fitTextboxToPrintArea(selectedTextbox, activePrintArea);
     constrainInsidePrintArea(selectedTextbox, activePrintArea, false);
     selectedTextbox.setCoords();
     canvas.requestRenderAll();
